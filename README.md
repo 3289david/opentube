@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenTube (오픈튜브)
 
-## Getting Started
+오프라인에서도 동작하는 YouTube 클론 앱입니다.
 
-First, run the development server:
+## 기능
+
+- YouTube 영상 검색 및 시청
+- yt-dlp를 이용한 영상 다운로드
+- 오프라인 라이브러리 (다운로드된 영상 관리)
+- 폴더 조직화 (교육, 음악, 게임, 기타)
+- 오프라인 HTML 라이브러리 내보내기 (핵심 기능)
+- 재생 위치 저장/복원
+- PWA 지원 (앱으로 설치 가능)
+
+## 설치 방법
+
+### 1. 환경 설정
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.local.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env.local` 파일에 YouTube API 키를 입력하세요:
+```
+YOUTUBE_API_KEY=your_youtube_api_key_here
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. yt-dlp 설치
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pip3 install yt-dlp
+```
 
-## Learn More
+### 3. 의존성 설치 및 실행
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm install
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+브라우저에서 `http://localhost:3000` 으로 접속하세요.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. 프로덕션 빌드
 
-## Deploy on Vercel
+```bash
+npm run build
+npm start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Docker로 실행
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker-compose up -d
+```
+
+## 핵심 기능: 오프라인 HTML 라이브러리
+
+라이브러리 페이지에서 **"오프라인 HTML 내보내기"** 버튼을 클릭하면:
+- 다운로드된 모든 영상 정보가 포함된 단일 HTML 파일 생성
+- 인터넷 없이 브라우저에서 바로 재생 가능
+- 검색/필터 기능 내장
+- 한국어 UI
+
+## 환경 변수
+
+| 변수 | 설명 |
+|------|------|
+| `YOUTUBE_API_KEY` | YouTube Data API v3 키 |
+| `NEXT_PUBLIC_APP_NAME` | 앱 이름 (기본: OpenTube) |
+| `STORAGE_PATH` | 다운로드 저장 경로 |
+
+## 기술 스택
+
+- **프론트엔드**: Next.js 15 (App Router), TypeScript, Tailwind CSS
+- **백엔드**: Next.js API Routes
+- **데이터베이스**: SQLite (better-sqlite3)
+- **다운로더**: yt-dlp
+- **YouTube API**: googleapis
+
+## 파일 구조
+
+```
+storage/
+  {videoId}/
+    {videoId}.mp4        # 영상 파일
+    {videoId}.jpg        # 썸네일
+    {videoId}.ko.vtt     # 자막
+    {videoId}.info.json  # 메타데이터
+
+opentube.db              # SQLite 데이터베이스
+```
