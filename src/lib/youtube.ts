@@ -387,3 +387,110 @@ export async function getTrendingVideos(): Promise<YouTubeVideo[]> {
     return []
   }
 }
+
+export async function getShorts(pageToken?: string): Promise<YouTubeSearchResult> {
+  const apiKey = getApiKey()
+  try {
+    const searchRes = await youtube.search.list({
+      key: apiKey,
+      q: '#Shorts',
+      part: ['snippet'],
+      type: ['video'],
+      videoDuration: 'short',
+      order: 'viewCount',
+      regionCode: 'KR',
+      maxResults: 20,
+      pageToken,
+    })
+
+    const videoIds = searchRes.data.items?.map(i => i.id?.videoId).filter(Boolean) as string[]
+    if (!videoIds.length) return { items: [], nextPageToken: undefined, totalResults: 0 }
+
+    const detailsRes = await youtube.videos.list({
+      key: apiKey,
+      id: videoIds,
+      part: ['snippet', 'contentDetails', 'statistics'],
+    })
+
+    const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+      id: v.id!,
+      title: v.snippet?.title || '',
+      description: v.snippet?.description || '',
+      channelId: v.snippet?.channelId || '',
+      channelTitle: v.snippet?.channelTitle || '',
+      thumbnail: v.snippet?.thumbnails?.high?.url || v.snippet?.thumbnails?.medium?.url || '',
+      duration: parseDuration(v.contentDetails?.duration || ''),
+      viewCount: formatViewCount(v.statistics?.viewCount || '0'),
+      publishedAt: v.snippet?.publishedAt || '',
+    }))
+
+    return {
+      items,
+      nextPageToken: searchRes.data.nextPageToken ?? undefined,
+      totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
+    }
+  } catch (e) {
+    console.error('YouTube getShorts error:', e)
+    return { items: [], totalResults: 0 }
+  }
+}
+
+export async function getVideosByCategory(category: string, pageToken?: string): Promise<YouTubeSearchResult> {
+  const apiKey = getApiKey()
+  const categoryQueries: Record<string, string> = {
+    '음악': 'music 음악 노래',
+    '게임': 'gaming 게임',
+    '뉴스': '뉴스 news 시사',
+    '스포츠': 'sports 스포츠',
+    '코딩': 'coding programming 개발',
+    '요리': 'cooking 요리 레시피',
+    '여행': 'travel 여행 vlog',
+    '교육': 'education 강의 tutorial',
+    '엔터': 'entertainment 예능 재미',
+  }
+  const q = categoryQueries[category] || category
+
+  try {
+    const searchRes = await youtube.search.list({
+      key: apiKey,
+      q,
+      part: ['snippet'],
+      type: ['video'],
+      order: 'viewCount',
+      regionCode: 'KR',
+      maxResults: 20,
+      pageToken,
+      videoDuration: 'medium',
+    })
+
+    const videoIds = searchRes.data.items?.map(i => i.id?.videoId).filter(Boolean) as string[]
+    if (!videoIds.length) return { items: [], nextPageToken: undefined, totalResults: 0 }
+
+    const detailsRes = await youtube.videos.list({
+      key: apiKey,
+      id: videoIds,
+      part: ['snippet', 'contentDetails', 'statistics'],
+    })
+
+    const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+      id: v.id!,
+      title: v.snippet?.title || '',
+      description: v.snippet?.description || '',
+      channelId: v.snippet?.channelId || '',
+      channelTitle: v.snippet?.channelTitle || '',
+      thumbnail: v.snippet?.thumbnails?.medium?.url || '',
+      duration: parseDuration(v.contentDetails?.duration || ''),
+      viewCount: formatViewCount(v.statistics?.viewCount || '0'),
+      publishedAt: v.snippet?.publishedAt || '',
+    }))
+
+    return {
+      items,
+      nextPageToken: searchRes.data.nextPageToken ?? undefined,
+      totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
+    }
+  } catch (e) {
+    console.error('YouTube getVideosByCategory error:', e)
+    return { items: [], totalResults: 0 }
+  }
+}

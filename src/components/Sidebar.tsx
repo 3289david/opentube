@@ -15,6 +15,11 @@ const navItems = [
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
     </svg>
   )},
+  { href: '/shorts', label: 'Shorts', icon: (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M17.77 10.32l-1.2-.5L18 9.06c1.73-.93 2.4-3.08 1.47-4.81s-3.08-2.4-4.81-1.47L6 7.46C4.27 8.39 3.6 10.54 4.53 12.27c.46.85 1.22 1.44 2.09 1.69L5.4 14.5c-1.73.93-2.4 3.08-1.47 4.81C4.69 20.73 6.3 21.6 7.96 21.6c.56 0 1.12-.14 1.64-.42L18 16.54c1.73-.93 2.4-3.08 1.47-4.81-.46-.85-1.22-1.44-2.09-1.69l.39.28zM10 14.65v-5.3L15 12l-5 2.65z"/>
+    </svg>
+  )},
   { href: '/subscriptions', label: '구독', icon: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
