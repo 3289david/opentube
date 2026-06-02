@@ -12,7 +12,7 @@ export default function ShortRedirect() {
   useEffect(() => {
     // Go to shorts page - the feed will start from beginning
     // In a full implementation we'd scroll to this specific short
-    router.replace(`/yt/shorts`)
+    router.replace(`/shorts`)
   }, [shortId, router])
 
   return (

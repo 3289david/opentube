@@ -388,38 +388,24 @@ export default function WatchPage() {
               />
             </div>
           ) : (
-            <div className="aspect-video bg-[#0a0a0a] rounded-xl flex flex-col items-center justify-center gap-4 border border-[#333] relative overflow-hidden">
-              {video?.thumbnail && (
-                <Image
-                  src={video.thumbnail}
-                  alt={video?.title || ''}
-                  fill
-                  className="object-cover opacity-20"
-                  sizes="100vw"
-                />
-              )}
-              <div className="relative z-10 flex flex-col items-center gap-3">
-                {/* YouTube embed */}
-                <div className="w-full max-w-2xl aspect-video">
-                  <iframe
-                    className="w-full h-full rounded-lg"
-                    src={`https://www.youtube.com/embed/${videoId}?rel=0`}
-                    allowFullScreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    title={video?.title || ''}
-                  />
-                </div>
-                <button
-                  onClick={() => setUseStream(true)}
-                  className="flex items-center gap-2 bg-[#1a1a1a] border border-[#444] text-white px-4 py-2 rounded-lg hover:bg-[#222] transition-colors text-sm"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  스트리밍으로 보기
-                </button>
-              </div>
+            <div className="aspect-video bg-black rounded-xl overflow-hidden relative">
+              <iframe
+                className="w-full h-full"
+                src={`https://www.youtube.com/embed/${videoId}?rel=0&autoplay=1`}
+                allowFullScreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                title={video?.title || ''}
+              />
+              <button
+                onClick={() => setUseStream(true)}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg hover:bg-black/80 transition-colors text-xs z-10"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                서버 스트리밍
+              </button>
             </div>
           )}
         </div>

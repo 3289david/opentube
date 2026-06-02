@@ -14,7 +14,7 @@ interface ShortsCardProps {
 export default function ShortsCard({ id, title, channelTitle, thumbnail, viewCount }: ShortsCardProps) {
   return (
     <Link
-      href={`/yt/shorts/${id}`}
+      href={`/shorts/${id}`}
       className="flex-shrink-0 w-36 sm:w-40 group"
     >
       {/* Portrait thumbnail */}

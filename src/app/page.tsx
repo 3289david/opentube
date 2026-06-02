@@ -318,7 +318,7 @@ function HomeContent() {
 
         {/* ── Video grid ────────────────────────────────────────────────── */}
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {Array.from({ length: 20 }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="aspect-video bg-[#272727] rounded-xl mb-3" />
@@ -334,7 +334,7 @@ function HomeContent() {
             ))}
           </div>
         ) : videos.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {videos.map(v => <VideoCard key={v.id} {...v} />)}
           </div>
         ) : !loading && (
