@@ -2,8 +2,10 @@ import { google } from 'googleapis'
 
 const youtube = google.youtube('v3')
 
-function getApiKey(): string | null {
-  return process.env.YOUTUBE_API_KEY || null
+const YOUTUBE_API_KEY = 'AIzaSyBcTJHDdslZmIrm6txfMSVY4oU5kzfL3KQ'
+
+function getApiKey(): string {
+  return YOUTUBE_API_KEY
 }
 
 export interface YouTubeVideo {
@@ -54,7 +56,7 @@ function formatViewCount(count: string): string {
 
 export async function searchVideos(query: string, pageToken?: string): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
-  if (!apiKey) return { items: [], totalResults: 0 }
+  // API key is hardcoded
 
   try {
     const searchRes = await youtube.search.list({

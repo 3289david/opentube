@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getVideo } from '@/lib/db'
+import { getVideo, getVideoLikes, getUserVideoLike } from '@/lib/db'
 import { getVideoDetails, getVideoComments } from '@/lib/youtube'
-import path from 'path'
+import { verifySession } from '@/lib/session'
 
 export async function GET(
   req: NextRequest,
@@ -10,6 +10,8 @@ export async function GET(
   const { id } = await params
   const { searchParams } = new URL(req.url)
   const wantsComments = searchParams.get('comments') === '1'
+  const wantsLikes = searchParams.get('likes') === '1'
+  const sessionToken = searchParams.get('sessionToken')
 
   // Check local DB first
   const localVideo = getVideo(id)
@@ -17,6 +19,16 @@ export async function GET(
   if (wantsComments) {
     const comments = await getVideoComments(id).catch(() => [])
     return NextResponse.json({ comments })
+  }
+
+  if (wantsLikes) {
+    const { likes, dislikes } = getVideoLikes(id)
+    let userLike: 'like' | 'dislike' | null = null
+    if (sessionToken) {
+      const session = verifySession(sessionToken)
+      if (session) userLike = getUserVideoLike(id, session.sessionId)
+    }
+    return NextResponse.json({ likes, dislikes, userLike })
   }
 
   if (localVideo) {

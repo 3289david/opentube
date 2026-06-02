@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
   try {
     if (type === 'html' && !videoId) {
       // Export full library as HTML
-      const html = await exportLibraryHtml()
-      return new NextResponse(html, {
+      const htmlBuffer = await exportLibraryHtml()
+      return new NextResponse(htmlBuffer as unknown as BodyInit, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Content-Disposition': 'attachment; filename="opentube-library.html"',

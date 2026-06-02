@@ -169,7 +169,7 @@ function generateSingleVideoHtml(video: VideoRecord): string {
 </html>`
 }
 
-export async function exportLibraryHtml(): Promise<string> {
+export async function exportLibraryHtml(): Promise<Buffer> {
   const videos = getAllVideos()
 
   // Build video cards with base64 thumbnails
@@ -197,7 +197,7 @@ export async function exportLibraryHtml(): Promise<string> {
 
   const videosJson = JSON.stringify(videoCards)
 
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -554,6 +554,8 @@ init();
 </script>
 </body>
 </html>`
+
+  return Buffer.from(html, 'utf-8')
 }
 
 function escapeHtml(s: string): string {

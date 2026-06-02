@@ -30,6 +30,18 @@ export default function Navbar() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-[#111] border-b border-[#333] h-14 flex items-center px-4 gap-4">
+      {/* Back to krl.kr */}
+      <a
+        href="https://krl.kr"
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-[#222] transition-colors flex-shrink-0 border border-[#333]"
+        title="krl.kr로 돌아가기"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        <span className="hidden sm:block">krl.kr</span>
+      </a>
+
       {/* Logo */}
       <Link href="/" className="flex items-center gap-2 flex-shrink-0">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">

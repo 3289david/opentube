@@ -8,15 +8,6 @@ export async function GET(req: NextRequest) {
   const pageToken = searchParams.get('pageToken') || undefined
   const playlistId = searchParams.get('playlistId')
 
-  const apiKey = process.env.YOUTUBE_API_KEY
-
-  if (!apiKey) {
-    if (type === 'video') {
-      return NextResponse.json({ items: [], totalResults: 0, noApiKey: true })
-    }
-    return NextResponse.json({ items: [], noApiKey: true })
-  }
-
   try {
     if (playlistId) {
       const [playlist, result] = await Promise.all([

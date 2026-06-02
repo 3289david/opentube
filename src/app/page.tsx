@@ -20,32 +20,32 @@ function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const query = searchParams.get('q') || ''
+  const tab = searchParams.get('tab') || 'video'
 
   const [searchQuery, setSearchQuery] = useState(query)
+  const [activeTab, setActiveTab] = useState(tab)
   const [videos, setVideos] = useState<Video[]>([])
   const [localVideos, setLocalVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(false)
-  const [hasApiKey, setHasApiKey] = useState(true)
   const [nextPageToken, setNextPageToken] = useState<string | undefined>()
   const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
-    // Load trending or local content
     if (!query) {
       loadTrending()
       loadLocalRecent()
     } else {
       setSearchQuery(query)
-      performSearch(query)
+      setActiveTab(tab)
+      performSearch(query, undefined, tab)
     }
-  }, [query])
+  }, [query, tab])
 
   const loadTrending = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/trending')
+      const res = await fetch('/yt/api/trending')
       const data = await res.json()
-      if (data.noApiKey) setHasApiKey(false)
       setVideos(data.videos || [])
     } catch {
       setVideos([])
@@ -56,13 +56,13 @@ function HomeContent() {
 
   const loadLocalRecent = async () => {
     try {
-      const res = await fetch('/api/library?sort=downloaded_at&limit=8')
+      const res = await fetch('/yt/api/library?sort=downloaded_at&limit=8')
       const data = await res.json()
       setLocalVideos((data.videos || []).map((v: { id: string; title: string; channel: string; thumbnail_path: string; duration: number; downloaded_at: string }) => ({
         id: v.id,
         title: v.title,
         channelTitle: v.channel,
-        thumbnail: v.thumbnail_path ? `/api/storage/${v.id}/${encodeURIComponent(v.thumbnail_path.split('/').pop() || '')}` : '',
+        thumbnail: v.thumbnail_path ? `/yt/api/storage/${v.id}/${encodeURIComponent(v.thumbnail_path.split('/').pop() || '')}` : '',
         duration: v.duration ? formatDuration(v.duration) : '',
         publishedAt: v.downloaded_at,
         isDownloaded: true,
@@ -72,16 +72,15 @@ function HomeContent() {
     }
   }
 
-  const performSearch = async (q: string, pageToken?: string) => {
+  const performSearch = async (q: string, pageToken?: string, type = activeTab) => {
     if (!q.trim()) return
     if (pageToken) setLoadingMore(true)
     else setLoading(true)
 
     try {
-      const url = `/api/search?q=${encodeURIComponent(q)}&type=video${pageToken ? `&pageToken=${pageToken}` : ''}`
+      const url = `/yt/api/search?q=${encodeURIComponent(q)}&type=${type}${pageToken ? `&pageToken=${pageToken}` : ''}`
       const res = await fetch(url)
       const data = await res.json()
-      if (data.noApiKey) setHasApiKey(false)
       if (pageToken) {
         setVideos(prev => [...prev, ...(data.items || [])])
       } else {
@@ -99,7 +98,14 @@ function HomeContent() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchQuery.trim()) {
-      router.push(`/?q=${encodeURIComponent(searchQuery.trim())}`)
+      router.push(`/yt?q=${encodeURIComponent(searchQuery.trim())}&tab=${activeTab}`)
+    }
+  }
+
+  const switchTab = (t: string) => {
+    setActiveTab(t)
+    if (query) {
+      router.push(`/yt?q=${encodeURIComponent(query)}&tab=${t}`)
     }
   }
 
@@ -113,21 +119,6 @@ function HomeContent() {
 
   return (
     <div className="p-6">
-      {/* No API key banner */}
-      {!hasApiKey && (
-        <div className="mb-6 bg-yellow-900/30 border border-yellow-700/50 rounded-xl p-4 flex items-start gap-3">
-          <svg className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <div>
-            <p className="text-yellow-400 font-medium text-sm">YouTube API 키가 설정되지 않았습니다</p>
-            <p className="text-yellow-600 text-xs mt-1">
-              <Link href="/settings" className="underline hover:text-yellow-400">설정</Link>에서 YouTube Data API v3 키를 입력하면 검색 및 트렌딩 기능을 사용할 수 있습니다.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Hero Search (when no query) */}
       {!query && (
         <div className="text-center py-12 mb-8">
@@ -162,20 +153,40 @@ function HomeContent() {
         </div>
       )}
 
-      {/* Recent Downloads section */}
+      {/* Recent Downloads */}
       {!query && localVideos.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">최근 다운로드</h2>
-            <Link href="/library" className="text-sm text-[#ff0000] hover:underline">
-              모두 보기
-            </Link>
+            <Link href="/yt/library" className="text-sm text-[#ff0000] hover:underline">모두 보기</Link>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {localVideos.map(v => (
               <VideoCard key={v.id} {...v} isDownloaded />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Search tabs (when searching) */}
+      {query && (
+        <div className="flex gap-1 mb-4 border-b border-[#333]">
+          {[
+            { key: 'video', label: '동영상' },
+            { key: 'channel', label: '채널' },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === t.key
+                  ? 'border-[#ff0000] text-white'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -187,8 +198,8 @@ function HomeContent() {
           </h2>
           {query && (
             <button
-              onClick={() => router.push('/')}
-              className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-1"
+              onClick={() => router.push('/yt')}
+              className="text-sm text-gray-400 hover:text-white flex items-center gap-1"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -234,9 +245,7 @@ function HomeContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
               </svg>
               <p className="text-lg">동영상이 없습니다</p>
-              <p className="text-sm mt-1">
-                {query ? '다른 검색어를 시도해보세요' : 'YouTube API 키를 설정하면 인기 동영상을 볼 수 있습니다'}
-              </p>
+              <p className="text-sm mt-1">다른 검색어를 시도해보세요</p>
             </div>
           )
         )}
