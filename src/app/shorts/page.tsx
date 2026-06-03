@@ -111,6 +111,23 @@ export default function ShortsPage() {
     container.scrollTo({ top: idx * container.clientHeight, behavior: 'smooth' })
   }
 
+  // Save to watch history when a short becomes active
+  useEffect(() => {
+    const short = shorts[activeIndex]
+    if (!short) return
+    fetch('/yt/api/watch-history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoId: short.id,
+        watchTime: 0,
+        title: short.title,
+        channel: short.channelTitle,
+        thumbnail: short.thumbnail,
+      }),
+    }).catch(() => {})
+  }, [activeIndex, shorts])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full bg-black">

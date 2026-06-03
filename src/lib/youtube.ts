@@ -108,6 +108,39 @@ function formatViewCount(count: string): string {
   return String(n)
 }
 
+// Script ranges for hard filtering — returns true if title contains target-language characters
+const SCRIPT_REGEX: Record<string, RegExp> = {
+  ko: /[가-힯ᄀ-ᇿㄱ-ㆎ]/,
+  ja: /[぀-ゟ゠-ヿ一-鿿]/,
+  'zh-Hant': /[一-鿿㐀-䶿]/,
+  'zh-Hans': /[一-鿿㐀-䶿]/,
+  th: /[฀-๿]/,
+  ar: /[؀-ۿ]/,
+  ru: /[Ѐ-ӿ]/,
+  hi: /[ऀ-ॿ]/,
+  tr: /[ğşıöüçĞŞİÖÜÇ]/,
+}
+
+function hasTargetScript(title: string, lang?: string): boolean {
+  if (!lang || lang === 'en') return true
+  const re = SCRIPT_REGEX[lang]
+  if (!re) return true
+  return re.test(title)
+}
+
+// Ensure query has language-native terms so YouTube returns language-filtered results
+function localizeQuery(q: string, lang?: string, regionCode?: string): string {
+  if (!lang || lang === 'en') return q
+  const trendingTerm = TRENDING_QUERY[lang]
+  if (!trendingTerm) return q
+  // If query already contains target-script chars, leave it alone
+  const re = SCRIPT_REGEX[lang]
+  if (re && re.test(q)) return q
+  // Prepend region keyword so YouTube favors target language even for Latin queries
+  const prefix = regionCode === 'KR' ? '한국' : regionCode === 'JP' ? '日本' : regionCode === 'TW' ? '台灣' : ''
+  return prefix ? `${prefix} ${q}` : q
+}
+
 export async function searchVideos(query: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
 
@@ -445,7 +478,7 @@ export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): 
         part: ['snippet', 'contentDetails', 'statistics'],
       })
 
-      const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+      const allItems: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
         id: v.id!,
         title: v.snippet?.title || '',
         description: v.snippet?.description || '',
@@ -456,7 +489,9 @@ export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): 
         viewCount: formatViewCount(v.statistics?.viewCount || '0'),
         publishedAt: v.snippet?.publishedAt || '',
       }))
-      return { items, nextPageToken: searchRes.data.nextPageToken ?? undefined }
+      // Hard-filter: drop titles that don't contain target-language script
+      const items = allItems.filter(v => hasTargetScript(v.title, lang))
+      return { items: items.length >= 4 ? items : allItems, nextPageToken: searchRes.data.nextPageToken ?? undefined }
     } catch (e) {
       console.error('YouTube getTrendingVideos (search) error:', e)
     }
@@ -543,20 +578,39 @@ export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<
 
 export async function getVideosByCategory(category: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
-  const categoryQueries: Record<string, string> = {
-    '음악': 'music 음악 노래',
-    '게임': 'gaming 게임',
-    '뉴스': '뉴스 news 시사',
-    '스포츠': 'sports 스포츠',
-    '코딩': 'coding programming 개발',
-    '요리': 'cooking 요리 레시피',
-    '여행': 'travel 여행 vlog',
-    '교육': 'education 강의 tutorial',
-    '엔터': 'entertainment 예능 재미',
-  }
-  const q = categoryQueries[category] || category
-
   const lang = REGION_LANGUAGE[regionCode]
+
+  // Korean-primary queries; other regions fall back to English/mixed
+  const categoryQueriesKO: Record<string, string> = {
+    '음악': '음악 한국 노래',
+    '게임': '게임 한국 플레이',
+    '뉴스': '한국 뉴스 시사',
+    '스포츠': '한국 스포츠',
+    '코딩': '한국 개발 프로그래밍',
+    '요리': '한국 요리 레시피',
+    '여행': '한국 여행 브이로그',
+    '교육': '한국 강의 교육',
+    '엔터': '한국 예능 재미',
+  }
+  const categoryQueriesEN: Record<string, string> = {
+    '음악': 'music popular songs',
+    '게임': 'gaming popular',
+    '뉴스': 'news today',
+    '스포츠': 'sports highlights',
+    '코딩': 'coding tutorial programming',
+    '요리': 'cooking recipe',
+    '여행': 'travel vlog',
+    '교육': 'education tutorial',
+    '엔터': 'entertainment funny',
+  }
+
+  const rawQ = category
+  const q = lang === 'ko'
+    ? (categoryQueriesKO[category] || `한국 ${rawQ}`)
+    : lang && lang !== 'en'
+      ? localizeQuery(categoryQueriesEN[category] || rawQ, lang, regionCode)
+      : (categoryQueriesEN[category] || rawQ)
+
   try {
     const searchRes = await youtube.search.list({
       key: apiKey,
@@ -580,7 +634,7 @@ export async function getVideosByCategory(category: string, pageToken?: string, 
       part: ['snippet', 'contentDetails', 'statistics'],
     })
 
-    const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+    const allItems: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
       id: v.id!,
       title: v.snippet?.title || '',
       description: v.snippet?.description || '',
@@ -592,8 +646,10 @@ export async function getVideosByCategory(category: string, pageToken?: string, 
       publishedAt: v.snippet?.publishedAt || '',
     }))
 
+    const items = lang !== 'en' ? allItems.filter(v => hasTargetScript(v.title, lang)) : allItems
+
     return {
-      items,
+      items: items.length >= 4 ? items : allItems,
       nextPageToken: searchRes.data.nextPageToken ?? undefined,
       totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
     }
@@ -622,7 +678,7 @@ export async function getRecommendedFeed(
     const topicPromises = querySlice.map(q =>
       youtube.search.list({
         key: apiKey,
-        q,
+        q: localizeQuery(q, lang, regionCode),
         part: ['snippet'],
         type: ['video'],
         maxResults: 8,
@@ -685,13 +741,17 @@ export async function getRecommendedFeed(
       publishedAt: v.snippet?.publishedAt || '',
     }))
 
+    // Post-filter: remove videos whose titles don't contain target-language script
+    const filtered = lang !== 'en' ? items.filter(v => hasTargetScript(v.title, lang)) : items
+    const finalItems = filtered.length >= 4 ? filtered : items
+
     // Shuffle for variety
-    for (let i = items.length - 1; i > 0; i--) {
+    for (let i = finalItems.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [items[i], items[j]] = [items[j], items[i]]
+      [finalItems[i], finalItems[j]] = [finalItems[j], finalItems[i]]
     }
 
-    return { items, nextPageToken: nextToken, totalResults: allItems.length }
+    return { items: finalItems, nextPageToken: nextToken, totalResults: allItems.length }
   } catch (e) {
     console.error('getRecommendedFeed error:', e)
     return { items: [], totalResults: 0 }

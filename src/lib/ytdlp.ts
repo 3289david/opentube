@@ -44,7 +44,8 @@ function findFile(dir: string, extensions: string[]): string | null {
 }
 
 export async function downloadVideo(videoId: string, outputDir?: string): Promise<DownloadResult> {
-  const dir = outputDir || ensureStorageDir(videoId)
+  const dir = outputDir || path.join(STORAGE_ROOT, videoId)
+  fs.mkdirSync(dir, { recursive: true })
   const url = `https://www.youtube.com/watch?v=${videoId}`
 
   downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'downloading' })
@@ -60,12 +61,13 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
       '--write-auto-subs',
       '--sub-langs', 'ko,en',
       '--write-info-json',
+      '--ignore-errors',
       '--output', path.join(dir, '%(id)s.%(ext)s'),
       '--no-playlist',
       url,
     ]
 
-    const proc = spawn(YT_DLP, args, { cwd: dir })
+    const proc = spawn(YT_DLP, args, { cwd: dir, detached: true })
 
     proc.stdout.on('data', (data: Buffer) => {
       const line = data.toString()
@@ -170,6 +172,7 @@ export async function downloadPlaylist(playlistUrl: string, outputDir: string): 
       '--write-auto-subs',
       '--sub-langs', 'ko,en',
       '--write-info-json',
+      '--ignore-errors',
       '--output', path.join(outputDir, '%(playlist_index)s-%(id)s/%(id)s.%(ext)s'),
       '--yes-playlist',
       playlistUrl,
@@ -197,6 +200,7 @@ export async function downloadChannel(channelUrl: string, outputDir: string): Pr
       '--write-thumbnail',
       '--convert-thumbnails', 'jpg',
       '--write-info-json',
+      '--ignore-errors',
       '--output', path.join(outputDir, '%(uploader)s/%(id)s/%(id)s.%(ext)s'),
       channelUrl,
     ]
