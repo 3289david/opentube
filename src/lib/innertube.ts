@@ -3,8 +3,14 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
+import { SocksProxyAgent } from 'socks-proxy-agent'
 
 const FFMPEG = '/usr/bin/ffmpeg'
+const TOR_PROXY = 'socks5://127.0.0.1:9060'
+
+function getAgent() {
+  try { return new SocksProxyAgent(TOR_PROXY) } catch { return undefined }
+}
 
 interface ITFormat {
   itag: number
@@ -61,17 +67,20 @@ async function callInnerTube(videoId: string): Promise<ITResponse> {
     }
   })
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'User-Agent': 'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+    'X-YouTube-Client-Name': '28',
+    'X-YouTube-Client-Version': '1.60.19',
+  }
+
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname: 'www.youtube.com',
       path: '/youtubei/v1/player',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
-        'X-YouTube-Client-Name': '28',
-        'X-YouTube-Client-Version': '1.60.19',
-      }
+      headers,
+      agent: getAgent(),
     }, (res) => {
       let data = ''
       res.on('data', d => data += d)
@@ -163,7 +172,7 @@ function httpGet(url: string, dest: string): Promise<void> {
       if (redirects > 5) { reject(new Error('Too many redirects')); return }
       const file = fs.createWriteStream(dest)
       const lib = u.startsWith('https') ? https : http
-      lib.get(u, { headers: { 'User-Agent': 'com.google.android.apps.youtube.vr.oculus/1.60.19' } }, (res) => {
+      lib.get(u, { headers: { 'User-Agent': 'com.google.android.apps.youtube.vr.oculus/1.60.19' }, agent: getAgent() }, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302) {
           file.close()
           fs.unlinkSync(dest)
@@ -202,11 +211,16 @@ function mergeAV(videoPath: string, audioPath: string, outputPath: string): Prom
   })
 }
 
+export class LoginRequiredError extends Error {
+  constructor() { super('LOGIN_REQUIRED') }
+}
+
 export async function downloadViaInnerTube(videoId: string, outputDir: string, maxHeight = 99999): Promise<string | null> {
   fs.mkdirSync(outputDir, { recursive: true })
 
   const data = await callInnerTube(videoId)
-  if (!data.streamingData || data.playabilityStatus?.status === 'LOGIN_REQUIRED') return null
+  if (data.playabilityStatus?.status === 'LOGIN_REQUIRED') throw new LoginRequiredError()
+  if (!data.streamingData) return null
 
   const all = [
     ...(data.streamingData.formats || []),

@@ -1,61 +1,101 @@
 import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
-import { downloadVideo, getVideoInfo, downloadProgress } from '@/lib/ytdlp'
-import { downloadViaInnerTube, getVideoMeta } from '@/lib/innertube'
+import { spawn } from 'child_process'
+import fs from 'fs'
+import { downloadProgress } from '@/lib/ytdlp'
+import { getVideoMeta } from '@/lib/innertube'
 import { insertVideo, getVideo } from '@/lib/db'
 
 const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const YT_DLP = '/usr/local/bin/yt-dlp'
+const FFMPEG = '/usr/bin/ffmpeg'
+const COOKIES = '/root/cookies.txt'
+const FORMAT = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
 
-// GET - check download status/progress
+function hasCookies(): boolean {
+  return fs.existsSync(COOKIES)
+}
+
+function ytdlpDownload(videoId: string, outputDir: string, useTor: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(outputDir, { recursive: true })
+    const outputTemplate = path.join(outputDir, `${videoId}.%(ext)s`)
+    const args: string[] = []
+
+    if (hasCookies()) args.push('--cookies', COOKIES)
+    if (useTor) {
+      args.push('--proxy', 'socks5://127.0.0.1:9060')
+      args.push('--extractor-args', 'youtube:player_client=android_vr,android')
+    } else {
+      args.push('--js-runtimes', 'node:/usr/bin/node')
+      args.push('--remote-components', 'ejs:github')
+    }
+
+    args.push(
+      '--ffmpeg-location', FFMPEG,
+      '-f', FORMAT,
+      '--merge-output-format', 'mp4',
+      '--no-playlist',
+      '-o', outputTemplate,
+      `https://www.youtube.com/watch?v=${videoId}`,
+    )
+
+    const proc = spawn(YT_DLP, args)
+    let lastPercent = 0
+    proc.stdout.on('data', (d: Buffer) => {
+      const m = d.toString().match(/(\d+\.?\d*)%/)
+      if (m) {
+        lastPercent = parseFloat(m[1])
+        downloadProgress.set(videoId, { percent: Math.round(lastPercent), speed: '', eta: '', status: 'downloading' })
+      }
+    })
+    proc.stderr.on('data', (d: Buffer) => {
+      const msg = d.toString()
+      if (!msg.includes('WARNING')) console.error('download yt-dlp:', msg.trim())
+    })
+    proc.on('close', (code) => {
+      const mp4 = path.join(outputDir, `${videoId}.mp4`)
+      if ((code === 0 || code === 1) && fs.existsSync(mp4)) resolve(mp4)
+      else reject(new Error(`yt-dlp exited with code ${code}`))
+    })
+    proc.on('error', reject)
+  })
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const videoId = searchParams.get('videoId')
 
-  if (!videoId) {
-    return NextResponse.json({ error: 'videoId required' }, { status: 400 })
-  }
+  if (!videoId) return NextResponse.json({ error: 'videoId required' }, { status: 400 })
 
   const progress = downloadProgress.get(videoId)
   if (!progress) {
-    // Check if already in DB
     const existing = getVideo(videoId)
-    if (existing) {
-      return NextResponse.json({ percent: 100, speed: '', eta: '', status: 'done' })
-    }
+    if (existing) return NextResponse.json({ percent: 100, speed: '', eta: '', status: 'done' })
     return NextResponse.json({ percent: 0, speed: '', eta: '', status: 'idle' })
   }
-
   return NextResponse.json(progress)
 }
 
-// POST - start download
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { videoId, folder = '기타', playlistUrl, type } = body
+    const { videoId, folder = '기타', playlistUrl } = body
 
     if (!videoId && !playlistUrl) {
       return NextResponse.json({ error: 'videoId or playlistUrl required' }, { status: 400 })
     }
 
     if (videoId) {
-      // Check if already downloaded
       const existing = getVideo(videoId)
-      if (existing?.video_path) {
-        return NextResponse.json({ status: 'already_downloaded', videoId })
-      }
+      if (existing?.video_path) return NextResponse.json({ status: 'already_downloaded', videoId })
 
-      // Start download in background
       const outputDir = path.join(STORAGE_ROOT, videoId)
 
-      // Get info and download in background (InnerTube first, yt-dlp fallback)
       ;(async () => {
         try {
           downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'downloading' })
-
-          // Try InnerTube download first (no bot detection)
-          let videoPath: string | null = null
-          let meta = await getVideoMeta(videoId).catch(() => null)
+          const meta = await getVideoMeta(videoId).catch(() => null)
 
           if (meta) {
             insertVideo({
@@ -67,44 +107,29 @@ export async function POST(req: NextRequest) {
             })
           }
 
-          downloadProgress.set(videoId, { percent: 30, speed: '', eta: '', status: 'downloading' })
-          videoPath = await downloadViaInnerTube(videoId, outputDir).catch(() => null)
+          downloadProgress.set(videoId, { percent: 10, speed: '', eta: '', status: 'downloading' })
 
-          if (videoPath) {
-            downloadProgress.set(videoId, { percent: 100, speed: '', eta: '', status: 'done' })
-            const finalMeta = meta || await getVideoMeta(videoId).catch(() => null)
-            insertVideo({
-              id: videoId,
-              title: finalMeta?.title || `Video ${videoId}`,
-              channel: finalMeta?.author || '',
-              channel_id: finalMeta?.channelId || undefined,
-              duration: finalMeta?.duration || 0,
-              upload_date: '',
-              description: finalMeta?.description?.slice(0, 2000) || undefined,
-              thumbnail_path: undefined,
-              video_path: videoPath,
-              captions_path: undefined,
-              metadata_json: undefined,
-              folder,
-            })
-            return
+          // Primary: cookies
+          let videoPath: string | null = null
+          try {
+            videoPath = await ytdlpDownload(videoId, outputDir, false)
+          } catch (e) {
+            console.error('cookies download failed, trying Tor:', e)
+            videoPath = await ytdlpDownload(videoId, outputDir, true)
           }
 
-          // Fall back to yt-dlp
-          downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'downloading' })
-          const result = await downloadVideo(videoId, outputDir)
-          const info = await getVideoInfo(videoId).catch(() => null)
+          downloadProgress.set(videoId, { percent: 100, speed: '', eta: '', status: 'done' })
           insertVideo({
             id: videoId,
-            title: info?.title || meta?.title || `Video ${videoId}`,
-            channel: info?.channel || meta?.author || '',
-            channel_id: info?.channel_id || meta?.channelId || undefined,
-            duration: info?.duration || meta?.duration || 0,
-            upload_date: info?.upload_date || undefined,
-            description: (info?.description || meta?.description)?.slice(0, 2000) || undefined,
-            thumbnail_path: result.thumbnailPath || undefined,
-            video_path: result.videoPath || undefined,
-            captions_path: result.captionsPath || undefined,
+            title: meta?.title || `Video ${videoId}`,
+            channel: meta?.author || '',
+            channel_id: meta?.channelId || undefined,
+            duration: meta?.duration || 0,
+            upload_date: '',
+            description: meta?.description?.slice(0, 2000) || undefined,
+            thumbnail_path: undefined,
+            video_path: videoPath,
+            captions_path: undefined,
             metadata_json: undefined,
             folder,
           })

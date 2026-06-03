@@ -1,9 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createBatchDownload, updateBatchDownload, getBatchDownloads, insertVideo, autoDetectFolder } from '@/lib/db'
-import { downloadVideo, getVideoInfo } from '@/lib/ytdlp'
+import { getVideoMeta } from '@/lib/innertube'
 import { getPlaylistItems, getPlaylist, getChannelVideos, getChannelDetails } from '@/lib/youtube'
 import path from 'path'
+import fs from 'fs'
+import { spawn } from 'child_process'
 import { STORAGE_ROOT } from '@/lib/db'
+
+const YT_DLP = '/usr/local/bin/yt-dlp'
+const FFMPEG = '/usr/bin/ffmpeg'
+const COOKIES = '/root/cookies.txt'
+const FORMAT = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+
+function hasCookies() { return fs.existsSync(COOKIES) }
+
+function ytdlpDownload(videoId: string, outputDir: string, useTor: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(outputDir, { recursive: true })
+    const outputTemplate = path.join(outputDir, `${videoId}.%(ext)s`)
+    const args: string[] = []
+    if (hasCookies()) args.push('--cookies', COOKIES)
+    if (useTor) {
+      args.push('--proxy', 'socks5://127.0.0.1:9060')
+      args.push('--extractor-args', 'youtube:player_client=android_vr,android')
+    } else {
+      args.push('--js-runtimes', 'node:/usr/bin/node')
+      args.push('--remote-components', 'ejs:github')
+    }
+    args.push('--ffmpeg-location', FFMPEG, '-f', FORMAT, '--merge-output-format', 'mp4', '--no-playlist', '-o', outputTemplate, `https://www.youtube.com/watch?v=${videoId}`)
+    const proc = spawn(YT_DLP, args)
+    proc.stderr.on('data', (d: Buffer) => { const msg = d.toString(); if (!msg.includes('WARNING')) console.error('batch yt-dlp:', msg.trim()) })
+    proc.on('close', (code) => {
+      const mp4 = path.join(outputDir, `${videoId}.mp4`)
+      if ((code === 0 || code === 1) && fs.existsSync(mp4)) resolve(mp4)
+      else reject(new Error(`yt-dlp exited ${code}`))
+    })
+    proc.on('error', reject)
+  })
+}
+
+async function downloadVideo(videoId: string, outputDir: string): Promise<string> {
+  try { return await ytdlpDownload(videoId, outputDir, false) }
+  catch { return ytdlpDownload(videoId, outputDir, true) }
+}
 
 // In-memory queue to avoid double starts
 const activeJobs = new Set<number>()
@@ -68,20 +107,20 @@ async function runPlaylistDownload(jobId: number, playlistId: string, folder: st
     for (const videoId of videoIds) {
       const outputDir = path.join(STORAGE_ROOT, videoId)
       try {
-        const result = await downloadVideo(videoId, outputDir)
-        const info = await getVideoInfo(videoId)
-        const detectedFolder = folder === 'auto' ? autoDetectFolder(info?.title || '') : folder
+        const meta = await getVideoMeta(videoId).catch(() => null)
+        const videoPath = await downloadVideo(videoId, outputDir)
+        const detectedFolder = folder === 'auto' ? autoDetectFolder(meta?.title || '') : folder
         insertVideo({
           id: videoId,
-          title: info?.title || `Video ${videoId}`,
-          channel: info?.channel || '',
-          channel_id: info?.channel_id || undefined,
-          duration: info?.duration || 0,
-          upload_date: info?.upload_date || undefined,
-          description: info?.description?.slice(0, 2000) || undefined,
-          thumbnail_path: result.thumbnailPath || undefined,
-          video_path: result.videoPath || undefined,
-          captions_path: result.captionsPath || undefined,
+          title: meta?.title || `Video ${videoId}`,
+          channel: meta?.author || '',
+          channel_id: meta?.channelId || undefined,
+          duration: meta?.duration || 0,
+          upload_date: undefined,
+          description: meta?.description?.slice(0, 2000) || undefined,
+          thumbnail_path: undefined,
+          video_path: videoPath || undefined,
+          captions_path: undefined,
           folder: detectedFolder,
         })
       } catch (e) {
@@ -125,20 +164,20 @@ async function runChannelDownload(jobId: number, channelId: string, folder: stri
     for (const videoId of videoIds) {
       const outputDir = path.join(STORAGE_ROOT, videoId)
       try {
-        const result = await downloadVideo(videoId, outputDir)
-        const info = await getVideoInfo(videoId)
-        const detectedFolder = folder === 'auto' ? autoDetectFolder(info?.title || '') : folder
+        const meta = await getVideoMeta(videoId).catch(() => null)
+        const videoPath = await downloadVideo(videoId, outputDir)
+        const detectedFolder = folder === 'auto' ? autoDetectFolder(meta?.title || '') : folder
         insertVideo({
           id: videoId,
-          title: info?.title || `Video ${videoId}`,
-          channel: info?.channel || '',
-          channel_id: info?.channel_id || undefined,
-          duration: info?.duration || 0,
-          upload_date: info?.upload_date || undefined,
-          description: info?.description?.slice(0, 2000) || undefined,
-          thumbnail_path: result.thumbnailPath || undefined,
-          video_path: result.videoPath || undefined,
-          captions_path: result.captionsPath || undefined,
+          title: meta?.title || `Video ${videoId}`,
+          channel: meta?.author || '',
+          channel_id: meta?.channelId || undefined,
+          duration: meta?.duration || 0,
+          upload_date: undefined,
+          description: meta?.description?.slice(0, 2000) || undefined,
+          thumbnail_path: undefined,
+          video_path: videoPath || undefined,
+          captions_path: undefined,
           folder: detectedFolder,
         })
       } catch (e) {
@@ -169,20 +208,20 @@ async function runUrlDownload(jobId: number, url: string, folder: string) {
     if (!videoId) throw new Error('Invalid YouTube URL')
 
     const outputDir = path.join(STORAGE_ROOT, videoId)
-    const result = await downloadVideo(videoId, outputDir)
-    const info = await getVideoInfo(videoId)
-    const detectedFolder = folder === 'auto' ? autoDetectFolder(info?.title || '') : folder
+    const meta = await getVideoMeta(videoId).catch(() => null)
+    const videoPath = await downloadVideo(videoId, outputDir)
+    const detectedFolder = folder === 'auto' ? autoDetectFolder(meta?.title || '') : folder
     insertVideo({
       id: videoId,
-      title: info?.title || `Video ${videoId}`,
-      channel: info?.channel || '',
-      channel_id: info?.channel_id || undefined,
-      duration: info?.duration || 0,
-      upload_date: info?.upload_date || undefined,
-      description: info?.description?.slice(0, 2000) || undefined,
-      thumbnail_path: result.thumbnailPath || undefined,
-      video_path: result.videoPath || undefined,
-      captions_path: result.captionsPath || undefined,
+      title: meta?.title || `Video ${videoId}`,
+      channel: meta?.author || '',
+      channel_id: meta?.channelId || undefined,
+      duration: meta?.duration || 0,
+      upload_date: undefined,
+      description: meta?.description?.slice(0, 2000) || undefined,
+      thumbnail_path: undefined,
+      video_path: videoPath || undefined,
+      captions_path: undefined,
       folder: detectedFolder,
     })
     updateBatchDownload(jobId, { status: 'done', completed: 1 })

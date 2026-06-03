@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getVideo, addTempStream, getTempStream } from '@/lib/db'
-import { downloadViaInnerTube } from '@/lib/innertube'
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
@@ -8,30 +7,69 @@ import { spawn } from 'child_process'
 const TMP_STREAMS_DIR = '/tmp/ot-streams'
 const YT_DLP = '/usr/local/bin/yt-dlp'
 const FFMPEG = '/usr/bin/ffmpeg'
+const COOKIES = '/root/cookies.txt'
+const FORMAT = 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best'
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
 
-async function downloadWithYtdlp(videoId: string, outputPath: string): Promise<void> {
+function hasCookies(): boolean {
+  return fs.existsSync(COOKIES)
+}
+
+// Primary: yt-dlp with cookies
+function downloadWithCookies(videoId: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ensureDir(path.dirname(outputPath))
     const proc = spawn(YT_DLP, [
-      '--ffmpeg-location', FFMPEG,
+      '--cookies', COOKIES,
       '--js-runtimes', 'node:/usr/bin/node',
-      '--extractor-args', 'youtube:player_client=android_vr,android',
-      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--remote-components', 'ejs:github',
+      '--ffmpeg-location', FFMPEG,
+      '-f', FORMAT,
       '--merge-output-format', 'mp4',
-      '--ignore-errors',
-      '-o', outputPath,
       '--no-playlist',
+      '-o', outputPath,
       `https://www.youtube.com/watch?v=${videoId}`,
     ], { detached: true })
     proc.unref()
-    proc.stderr.on('data', (d: Buffer) => console.error('stream yt-dlp:', d.toString()))
+    proc.stderr.on('data', (d: Buffer) => {
+      const msg = d.toString()
+      if (!msg.includes('WARNING')) console.error('yt-dlp:', msg.trim())
+    })
     proc.on('close', (code) => {
       if (code === 0 || (code === 1 && fs.existsSync(outputPath))) resolve()
       else reject(new Error(`yt-dlp exited with code ${code}`))
+    })
+    proc.on('error', reject)
+  })
+}
+
+// Fallback: yt-dlp through Tor proxy
+function downloadWithTor(videoId: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ensureDir(path.dirname(outputPath))
+    const args = [
+      '--proxy', 'socks5://127.0.0.1:9060',
+      '--extractor-args', 'youtube:player_client=android_vr,android',
+      '--ffmpeg-location', FFMPEG,
+      '-f', FORMAT,
+      '--merge-output-format', 'mp4',
+      '--no-playlist',
+      '-o', outputPath,
+      `https://www.youtube.com/watch?v=${videoId}`,
+    ]
+    if (hasCookies()) args.unshift('--cookies', COOKIES)
+    const proc = spawn(YT_DLP, args, { detached: true })
+    proc.unref()
+    proc.stderr.on('data', (d: Buffer) => {
+      const msg = d.toString()
+      if (!msg.includes('WARNING')) console.error('yt-dlp tor:', msg.trim())
+    })
+    proc.on('close', (code) => {
+      if (code === 0 || (code === 1 && fs.existsSync(outputPath))) resolve()
+      else reject(new Error(`yt-dlp tor exited with code ${code}`))
     })
     proc.on('error', reject)
   })
@@ -47,7 +85,6 @@ function serveFile(filePath: string, req: NextRequest): NextResponse {
     const start = parseInt(parts[0], 10)
     const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + 2 * 1024 * 1024, fileSize - 1)
     const chunkSize = end - start + 1
-
     const stream = fs.createReadStream(filePath, { start, end })
     const readable = new ReadableStream({
       start(controller) {
@@ -57,7 +94,6 @@ function serveFile(filePath: string, req: NextRequest): NextResponse {
       },
       cancel() { stream.destroy() },
     })
-
     return new NextResponse(readable, {
       status: 206,
       headers: {
@@ -78,7 +114,6 @@ function serveFile(filePath: string, req: NextRequest): NextResponse {
     },
     cancel() { stream.destroy() },
   })
-
   return new NextResponse(readable, {
     status: 200,
     headers: {
@@ -87,6 +122,12 @@ function serveFile(filePath: string, req: NextRequest): NextResponse {
       'Accept-Ranges': 'bytes',
     },
   })
+}
+
+function saveTemp(videoId: string, filePath: string) {
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    .toISOString().replace('T', ' ').split('.')[0]
+  addTempStream(videoId, filePath, expiresAt)
 }
 
 export async function GET(
@@ -108,40 +149,32 @@ export async function GET(
     return serveFile(streamEntry.file_path, req)
   }
 
-  // 3. Download via InnerTube (best quality, no bot detection), fall back to yt-dlp
   const videoDir = path.join(TMP_STREAMS_DIR, videoId)
   const outputPath = path.join(videoDir, 'video.mp4')
   ensureDir(videoDir)
 
-  let downloaded = false
-
-  try {
-    const result = await downloadViaInnerTube(videoId, videoDir, 1080)
-    if (result && fs.existsSync(result)) {
-      downloaded = true
-      // outputPath may differ from result if downloadViaInnerTube chose a different name
-      const finalPath = result
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
-        .toISOString().replace('T', ' ').split('.')[0]
-      addTempStream(videoId, finalPath, expiresAt)
-      return serveFile(finalPath, req)
-    }
-  } catch (e) {
-    console.error('InnerTube download error, falling back to yt-dlp:', e)
-  }
-
-  if (!downloaded) {
+  // 3. Primary: yt-dlp with cookies
+  if (hasCookies()) {
     try {
-      await downloadWithYtdlp(videoId, outputPath)
+      await downloadWithCookies(videoId, outputPath)
       if (fs.existsSync(outputPath)) {
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
-          .toISOString().replace('T', ' ').split('.')[0]
-        addTempStream(videoId, outputPath, expiresAt)
+        saveTemp(videoId, outputPath)
         return serveFile(outputPath, req)
       }
     } catch (e) {
-      console.error('yt-dlp stream fallback error:', e)
+      console.error('cookies download failed, trying Tor:', e)
     }
+  }
+
+  // 4. Fallback: yt-dlp through Tor
+  try {
+    await downloadWithTor(videoId, outputPath)
+    if (fs.existsSync(outputPath)) {
+      saveTemp(videoId, outputPath)
+      return serveFile(outputPath, req)
+    }
+  } catch (e) {
+    console.error('Tor download failed:', e)
   }
 
   return NextResponse.json({ error: '스트리밍에 실패했습니다' }, { status: 500 })

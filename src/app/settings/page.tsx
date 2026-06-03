@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [restoreError, setRestoreError] = useState('')
   const [restoreSuccess, setRestoreSuccess] = useState(false)
 
+
   useEffect(() => {
     setQuality(localStorage.getItem('download_quality') || 'best')
     setIsPwaInstalled(window.matchMedia('(display-mode: standalone)').matches)
