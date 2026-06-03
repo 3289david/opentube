@@ -3,8 +3,8 @@ import path from 'path'
 import fs from 'fs'
 import crypto from 'crypto'
 
-const DB_PATH = path.join(process.cwd(), 'opentube.db')
-export const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const DB_PATH = '/root/yt-clone/opentube.db'
+export const STORAGE_ROOT = '/root/yt-clone/storage'
 
 let _db: Database.Database | null = null
 

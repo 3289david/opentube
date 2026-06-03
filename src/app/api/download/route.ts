@@ -6,7 +6,7 @@ import { downloadProgress } from '@/lib/ytdlp'
 import { getVideoMeta } from '@/lib/innertube'
 import { insertVideo, getVideo } from '@/lib/db'
 
-const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const STORAGE_ROOT = '/root/yt-clone/storage'
 const YT_DLP = '/usr/local/bin/yt-dlp'
 const FFMPEG = '/usr/bin/ffmpeg'
 const COOKIES = '/root/cookies.txt'
