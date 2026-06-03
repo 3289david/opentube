@@ -65,7 +65,7 @@ export default function ChannelPage() {
 
   const toggleSubscribe = async () => {
     if (isSubscribed) {
-      await fetch(`/api/subscriptions?channelId=${channelId}`, { method: 'DELETE' })
+      await fetch(`/yt/api/subscriptions?channelId=${channelId}`, { method: 'DELETE' })
       setIsSubscribed(false)
     } else {
       await fetch('/yt/api/subscriptions', {

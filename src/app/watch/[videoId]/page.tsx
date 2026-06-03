@@ -94,7 +94,6 @@ export default function WatchPage() {
   useEffect(() => {
     loadSession()
     loadVideo()
-    loadRelated()
     loadResumePosition()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId])
@@ -140,6 +139,22 @@ export default function WatchPage() {
       const res = await fetch(`/yt/api/video/${videoId}`)
       const data = await res.json()
       setVideo(data)
+      // Load related videos using actual title for better results
+      loadRelated(data?.title)
+      // Save watch history immediately so iframe videos appear in history
+      if (data?.title) {
+        fetch('/yt/api/watch-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId,
+            watchTime: 0,
+            title: data.title,
+            channel: data.channel,
+            thumbnail: data.thumbnail,
+          }),
+        }).catch(() => {})
+      }
     } catch {
       setVideo(null)
     } finally {
@@ -173,9 +188,11 @@ export default function WatchPage() {
     } catch { /* */ }
   }
 
-  const loadRelated = async () => {
+  const loadRelated = async (title?: string) => {
     try {
-      const res = await fetch(`/yt/api/search?q=${encodeURIComponent(videoId)}&type=video`)
+      const region = localStorage.getItem('ot_region') || 'KR'
+      const q = title || videoId
+      const res = await fetch(`/yt/api/search?q=${encodeURIComponent(q)}&type=video&region=${region}`)
       const data = await res.json()
       setRelated((data.items || []).filter((v: RelatedVideo) => v.id !== videoId).slice(0, 15))
     } catch {

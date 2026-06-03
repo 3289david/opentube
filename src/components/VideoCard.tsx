@@ -44,7 +44,7 @@ export default function VideoCard({
     if (downloaded || downloading) return
     setDownloading(true)
     try {
-      const res = await fetch('/api/download', {
+      const res = await fetch('/yt/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId: id }),

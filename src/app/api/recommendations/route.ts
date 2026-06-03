@@ -76,8 +76,8 @@ export async function GET(req: NextRequest) {
 
     // Fallback: if no history, use trending
     if (allTitles.length === 0 && channelIds.length === 0) {
-      const trending = await getTrendingVideos(region)
-      return NextResponse.json({ items: trending, nextPageToken: undefined, isPersonalized: false })
+      const trending = await getTrendingVideos(region, pageToken)
+      return NextResponse.json({ items: trending.items, nextPageToken: trending.nextPageToken, isPersonalized: false })
     }
 
     // Extract keywords and build unique topic queries
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('Recommendations error:', error)
     // Fallback to trending
-    const trending = await getTrendingVideos(region)
-    return NextResponse.json({ items: trending, nextPageToken: undefined, isPersonalized: false })
+    const trending = await getTrendingVideos(region, pageToken)
+    return NextResponse.json({ items: trending.items, nextPageToken: trending.nextPageToken, isPersonalized: false })
   }
 }

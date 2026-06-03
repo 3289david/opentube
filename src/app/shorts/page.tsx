@@ -24,8 +24,14 @@ export default function ShortsPage() {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
   const nextPageTokenRef = useRef<string | undefined>(undefined)
+  const regionRef = useRef('KR')
 
-  useEffect(() => { loadShorts() }, [])
+  useEffect(() => {
+    const r = localStorage.getItem('ot_region') || 'KR'
+    regionRef.current = r
+    loadShorts(r)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keep ref in sync so loadMore never has a stale closure
   useEffect(() => { nextPageTokenRef.current = nextPageToken }, [nextPageToken])
@@ -72,10 +78,10 @@ export default function ShortsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shorts]) // re-attach after new items are appended
 
-  const loadShorts = async () => {
+  const loadShorts = async (reg = regionRef.current) => {
     setLoading(true)
     try {
-      const res = await fetch('/yt/api/trending?type=shorts')
+      const res = await fetch(`/yt/api/trending?type=shorts&region=${reg}`)
       const data = await res.json()
       setShorts(data.items || [])
       setNextPageToken(data.nextPageToken)
@@ -90,7 +96,7 @@ export default function ShortsPage() {
     if (loadingMoreRef.current || !nextPageTokenRef.current) return
     loadingMoreRef.current = true
     try {
-      const res = await fetch(`/yt/api/trending?type=shorts&pageToken=${nextPageTokenRef.current}`)
+      const res = await fetch(`/yt/api/trending?type=shorts&pageToken=${nextPageTokenRef.current}&region=${regionRef.current}`)
       const data = await res.json()
       setShorts(prev => [...prev, ...(data.items || [])])
       setNextPageToken(data.nextPageToken)

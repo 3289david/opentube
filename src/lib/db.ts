@@ -162,6 +162,29 @@ function initializeSchema(db: Database.Database): void {
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN title TEXT`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN channel TEXT`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN thumbnail TEXT`) } catch { /* already exists */ }
+
+  // Remove FK constraint on watch_history.video_id — history must record any video, not just downloaded ones
+  try {
+    const fks = db.prepare('PRAGMA foreign_key_list(watch_history)').all()
+    if (fks.length > 0) {
+      db.pragma('foreign_keys = OFF')
+      db.exec(`
+        CREATE TABLE watch_history_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          video_id TEXT NOT NULL,
+          title TEXT,
+          channel TEXT,
+          thumbnail TEXT,
+          watch_time REAL DEFAULT 0,
+          watched_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO watch_history_new SELECT id, video_id, title, channel, thumbnail, watch_time, watched_at FROM watch_history;
+        DROP TABLE watch_history;
+        ALTER TABLE watch_history_new RENAME TO watch_history;
+      `)
+      db.pragma('foreign_keys = ON')
+    }
+  } catch { /* already migrated */ }
 }
 
 export const db = getDb()

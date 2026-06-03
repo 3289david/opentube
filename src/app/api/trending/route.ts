@@ -17,8 +17,8 @@ export async function GET(req: NextRequest) {
       const result = await getVideosByCategory(category, pageToken, region)
       return NextResponse.json({ videos: result.items, nextPageToken: result.nextPageToken })
     }
-    const videos = await getTrendingVideos(region)
-    return NextResponse.json({ videos })
+    const result = await getTrendingVideos(region, pageToken)
+    return NextResponse.json({ videos: result.items, nextPageToken: result.nextPageToken })
   } catch (error) {
     console.error('Trending error:', error)
     return NextResponse.json({ videos: [], items: [], error: 'Failed' })

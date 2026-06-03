@@ -38,7 +38,7 @@ export default function PlaylistPage() {
   const loadPlaylist = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/search?playlistId=${playlistId}&type=playlist`)
+      const res = await fetch(`/yt/api/search?playlistId=${playlistId}&type=playlist`)
       const data = await res.json()
       setPlaylist(data.playlist)
       setVideos(data.items || [])

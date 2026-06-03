@@ -19,40 +19,27 @@ interface Video {
 
 const CATEGORIES = ['전체', '음악', '게임', '뉴스', '스포츠', '코딩', '요리', '여행', '교육', '엔터']
 
-const REGIONS = [
-  { code: 'KR', label: '한국', flag: '🇰🇷' },
-  { code: 'US', label: '미국', flag: '🇺🇸' },
-  { code: 'JP', label: '일본', flag: '🇯🇵' },
-  { code: 'TW', label: '대만', flag: '🇹🇼' },
-  { code: 'GB', label: '영국', flag: '🇬🇧' },
-  { code: 'DE', label: '독일', flag: '🇩🇪' },
-  { code: 'FR', label: '프랑스', flag: '🇫🇷' },
-  { code: 'IN', label: '인도', flag: '🇮🇳' },
-  { code: 'BR', label: '브라질', flag: '🇧🇷' },
-  { code: 'AU', label: '호주', flag: '🇦🇺' },
-  { code: 'CA', label: '캐나다', flag: '🇨🇦' },
-  { code: 'MX', label: '멕시코', flag: '🇲🇽' },
-  { code: 'ID', label: '인도네시아', flag: '🇮🇩' },
-  { code: 'TH', label: '태국', flag: '🇹🇭' },
-  { code: 'VN', label: '베트남', flag: '🇻🇳' },
-  { code: 'PH', label: '필리핀', flag: '🇵🇭' },
-  { code: 'SG', label: '싱가포르', flag: '🇸🇬' },
-  { code: 'RU', label: '러시아', flag: '🇷🇺' },
-  { code: 'IT', label: '이탈리아', flag: '🇮🇹' },
-  { code: 'ES', label: '스페인', flag: '🇪🇸' },
-]
-
-function detectRegion(): string {
+async function detectRegion(): Promise<string> {
   if (typeof localStorage === 'undefined') return 'KR'
-  const stored = localStorage.getItem('ot_region')
-  if (stored) return stored
-  const lang = typeof navigator !== 'undefined' ? navigator.language : 'ko'
+  const cached = localStorage.getItem('ot_region')
+  const cachedTime = localStorage.getItem('ot_region_time')
+  if (cached && cachedTime && Date.now() - parseInt(cachedTime) < 86400000) return cached
+  try {
+    const res = await fetch('https://ipapi.co/country_code/')
+    const code = (await res.text()).trim().toUpperCase()
+    if (code.length === 2 && /^[A-Z]+$/.test(code)) {
+      localStorage.setItem('ot_region', code)
+      localStorage.setItem('ot_region_time', String(Date.now()))
+      return code
+    }
+  } catch { /* fallback below */ }
+  const lang = navigator.language?.split('-')[0] || 'ko'
   const map: Record<string, string> = {
     ko: 'KR', ja: 'JP', zh: 'TW', en: 'US', de: 'DE', fr: 'FR',
     pt: 'BR', es: 'ES', it: 'IT', ru: 'RU', hi: 'IN', th: 'TH',
     vi: 'VN', id: 'ID', tl: 'PH',
   }
-  return map[lang.split('-')[0]] || 'KR'
+  return map[lang] || 'KR'
 }
 
 function HomeContent() {
@@ -78,11 +65,12 @@ function HomeContent() {
   const sentinelRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
 
-  // Init region from localStorage on client
+  // Auto-detect region from IP on client
   useEffect(() => {
-    const r = detectRegion()
-    setRegion(r)
-    setRegionReady(true)
+    detectRegion().then(r => {
+      setRegion(r)
+      setRegionReady(true)
+    })
   }, [])
 
   // Load home when region is ready (and no search query)
@@ -219,17 +207,6 @@ function HomeContent() {
     loadHome(cat)
   }
 
-  const switchRegion = (r: string) => {
-    if (r === region) return
-    localStorage.setItem('ot_region', r)
-    setRegion(r)
-    setActiveCategory('전체')
-    setVideos([])
-    setNextPageToken(undefined)
-    loadHome('전체', undefined, r)
-    loadShorts(r)
-  }
-
   const switchTab = (t: string) => {
     setActiveTab(t)
     if (query) {
@@ -256,7 +233,6 @@ function HomeContent() {
   }
 
   const isSearchMode = !!query
-  const currentRegion = REGIONS.find(r => r.code === region)
 
   return (
     <div className="flex flex-col min-h-full">
@@ -288,26 +264,6 @@ function HomeContent() {
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {/* ── Region selector (no query) ─────────────────────────────────── */}
-      {!isSearchMode && (
-        <div className="flex gap-1.5 px-4 pb-2 overflow-x-auto scrollbar-hide flex-shrink-0">
-          {REGIONS.map(r => (
-            <button
-              key={r.code}
-              onClick={() => switchRegion(r.code)}
-              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                region === r.code
-                  ? 'bg-[#ff0000] text-white'
-                  : 'bg-[#1a1a1a] text-gray-400 hover:bg-[#2a2a2a] hover:text-white border border-[#333]'
-              }`}
-            >
-              <span>{r.flag}</span>
-              <span className="hidden sm:inline">{r.label}</span>
-            </button>
-          ))}
         </div>
       )}
 
@@ -405,7 +361,7 @@ function HomeContent() {
               : activeCategory === '전체'
                 ? isPersonalized
                   ? '✨ 추천 영상'
-                  : `🔥 인기 동영상 ${currentRegion ? `· ${currentRegion.flag} ${currentRegion.label}` : ''}`
+                  : `🔥 인기 동영상 · ${region}`
                 : activeCategory}
           </h2>
         )}

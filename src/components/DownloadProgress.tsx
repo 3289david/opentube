@@ -25,7 +25,7 @@ export default function DownloadProgress({ videoId, onComplete, onCancel }: Down
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/download?videoId=${videoId}`)
+        const res = await fetch(`/yt/api/download?videoId=${videoId}`)
         if (!res.ok) return
         const data: Progress = await res.json()
         setProgress(data)

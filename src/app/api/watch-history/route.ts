@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getWatchPosition, saveWatchPosition, getRecentHistory, clearHistory } from '@/lib/db'
+import { getDb, getWatchPosition, saveWatchPosition, getRecentHistory, clearHistory } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -26,7 +26,13 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE() {
-  clearHistory()
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const videoId = searchParams.get('videoId')
+  if (videoId) {
+    getDb().prepare('DELETE FROM watch_history WHERE video_id = ?').run(videoId)
+  } else {
+    clearHistory()
+  }
   return NextResponse.json({ ok: true })
 }

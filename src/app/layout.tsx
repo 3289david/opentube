@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   title: 'OpenTube - 오픈튜브',
   description: '오프라인에서도 동작하는 YouTube 클론',
   manifest: '/manifest.json',
+  icons: { icon: '/favicon.svg', shortcut: '/favicon.svg' },
 }
 
 export default function RootLayout({

@@ -2,6 +2,8 @@ import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 
+const YT_DLP = '/usr/local/bin/yt-dlp'
+const FFMPEG = '/usr/bin/ffmpeg'
 const STORAGE_ROOT = path.join(process.cwd(), 'storage')
 
 export interface DownloadResult {
@@ -49,6 +51,7 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
 
   return new Promise((resolve, reject) => {
     const args = [
+      '--ffmpeg-location', FFMPEG,
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -62,7 +65,7 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
       url,
     ]
 
-    const proc = spawn('yt-dlp', args, { cwd: dir })
+    const proc = spawn(YT_DLP, args, { cwd: dir })
 
     proc.stdout.on('data', (data: Buffer) => {
       const line = data.toString()
@@ -125,7 +128,7 @@ export interface VideoInfo {
 export async function getVideoInfo(videoId: string): Promise<VideoInfo | null> {
   return new Promise((resolve) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`
-    const proc = spawn('yt-dlp', ['--dump-json', '--no-playlist', url])
+    const proc = spawn(YT_DLP, ['--dump-json', '--no-playlist', url])
 
     let output = ''
     proc.stdout.on('data', (data: Buffer) => { output += data.toString() })
@@ -158,6 +161,7 @@ export async function downloadPlaylist(playlistUrl: string, outputDir: string): 
 
   return new Promise((resolve, reject) => {
     const args = [
+      '--ffmpeg-location', FFMPEG,
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -171,7 +175,7 @@ export async function downloadPlaylist(playlistUrl: string, outputDir: string): 
       playlistUrl,
     ]
 
-    const proc = spawn('yt-dlp', args)
+    const proc = spawn(YT_DLP, args)
     proc.stdout.on('data', (d: Buffer) => console.log('playlist:', d.toString()))
     proc.stderr.on('data', (d: Buffer) => console.error('playlist err:', d.toString()))
     proc.on('close', (code) => {
@@ -187,6 +191,7 @@ export async function downloadChannel(channelUrl: string, outputDir: string): Pr
 
   return new Promise((resolve, reject) => {
     const args = [
+      '--ffmpeg-location', FFMPEG,
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -196,7 +201,7 @@ export async function downloadChannel(channelUrl: string, outputDir: string): Pr
       channelUrl,
     ]
 
-    const proc = spawn('yt-dlp', args)
+    const proc = spawn(YT_DLP, args)
     proc.stdout.on('data', (d: Buffer) => console.log('channel:', d.toString()))
     proc.stderr.on('data', (d: Buffer) => console.error('channel err:', d.toString()))
     proc.on('close', (code) => {

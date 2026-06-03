@@ -37,6 +37,60 @@ export interface YouTubeSearchResult {
   totalResults: number
 }
 
+const REGION_LANGUAGE: Record<string, string> = {
+  KR: 'ko', JP: 'ja', TW: 'zh-Hant', CN: 'zh-Hans',
+  US: 'en', GB: 'en', AU: 'en', CA: 'en', NZ: 'en',
+  DE: 'de', AT: 'de', CH: 'de',
+  FR: 'fr', BE: 'fr',
+  IN: 'hi', BD: 'bn',
+  BR: 'pt', PT: 'pt',
+  MX: 'es', ES: 'es', AR: 'es', CO: 'es', CL: 'es',
+  IT: 'it', RU: 'ru', TH: 'th', VN: 'vi', ID: 'id',
+  PH: 'tl', MY: 'ms', SG: 'en', NL: 'nl', PL: 'pl',
+  TR: 'tr', SA: 'ar', AE: 'ar', EG: 'ar',
+}
+
+const SHORTS_QUERY: Record<string, string> = {
+  KR: '쇼츠 한국',
+  JP: 'ショート 日本',
+  TW: '台灣 短片',
+  CN: '中国 短视频',
+  TH: 'ไทย ชอร์ต',
+  VN: 'Việt Nam shorts',
+  IN: 'India shorts hindi',
+  ID: 'Indonesia shorts',
+  DE: 'Deutschland shorts',
+  FR: 'France shorts',
+  BR: 'Brasil shorts',
+  MX: 'México shorts',
+  RU: 'Россия shorts',
+  TR: 'Türkiye shorts',
+  SA: 'عربي shorts',
+}
+
+const TRENDING_QUERY: Record<string, string> = {
+  ko: '한국 인기 동영상',
+  ja: '日本 人気 動画',
+  'zh-Hant': '台灣 熱門 影片',
+  'zh-Hans': '中国 热门 视频',
+  hi: 'India popular video hindi',
+  pt: 'Brasil popular vídeos',
+  es: 'popular videos español',
+  de: 'Deutschland beliebte Videos',
+  fr: 'France vidéos populaires',
+  ru: 'Россия популярные видео',
+  tr: 'Türkiye popüler video',
+  ar: 'عربي فيديو شعبي',
+  th: 'ไทย วิดีโอยอดนิยม',
+  vi: 'Việt Nam video phổ biến',
+  id: 'Indonesia video populer',
+  tl: 'Pilipinas popular video',
+  ms: 'Malaysia video popular',
+  nl: 'Nederland populaire video',
+  pl: 'Polska popularne wideo',
+  it: 'Italia video popolari',
+}
+
 function parseDuration(iso: string): string {
   const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
   if (!match) return '0:00'
@@ -57,6 +111,7 @@ function formatViewCount(count: string): string {
 export async function searchVideos(query: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
 
+  const lang = REGION_LANGUAGE[regionCode]
   try {
     const searchRes = await youtube.search.list({
       key: apiKey,
@@ -66,6 +121,7 @@ export async function searchVideos(query: string, pageToken?: string, regionCode
       maxResults: 20,
       pageToken: pageToken,
       regionCode,
+      ...(lang ? { relevanceLanguage: lang } : {}),
     })
 
     const videoIds = searchRes.data.items?.map(i => i.id?.videoId).filter(Boolean) as string[]
@@ -357,10 +413,56 @@ export async function getVideoComments(videoId: string): Promise<YouTubeComment[
   }
 }
 
-export async function getTrendingVideos(regionCode = 'KR'): Promise<YouTubeVideo[]> {
+export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): Promise<{ items: YouTubeVideo[], nextPageToken?: string }> {
   const apiKey = getApiKey()
-  if (!apiKey) return []
+  const lang = REGION_LANGUAGE[regionCode]
+  const trendingQuery = lang ? TRENDING_QUERY[lang] : undefined
 
+  // For regions with a non-English language, use search.list + relevanceLanguage
+  // because videos.list chart=mostPopular doesn't support relevanceLanguage
+  if (trendingQuery && lang !== 'en') {
+    try {
+      const searchRes = await youtube.search.list({
+        key: apiKey,
+        q: trendingQuery,
+        part: ['snippet'],
+        type: ['video'],
+        order: 'viewCount',
+        regionCode,
+        relevanceLanguage: lang,
+        maxResults: 24,
+        pageToken,
+        videoDuration: 'medium',
+        safeSearch: 'none',
+      })
+
+      const videoIds = searchRes.data.items?.map(i => i.id?.videoId).filter(Boolean) as string[]
+      if (!videoIds.length) return { items: [] }
+
+      const detailsRes = await youtube.videos.list({
+        key: apiKey,
+        id: videoIds,
+        part: ['snippet', 'contentDetails', 'statistics'],
+      })
+
+      const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+        id: v.id!,
+        title: v.snippet?.title || '',
+        description: v.snippet?.description || '',
+        channelId: v.snippet?.channelId || '',
+        channelTitle: v.snippet?.channelTitle || '',
+        thumbnail: v.snippet?.thumbnails?.medium?.url || '',
+        duration: parseDuration(v.contentDetails?.duration || ''),
+        viewCount: formatViewCount(v.statistics?.viewCount || '0'),
+        publishedAt: v.snippet?.publishedAt || '',
+      }))
+      return { items, nextPageToken: searchRes.data.nextPageToken ?? undefined }
+    } catch (e) {
+      console.error('YouTube getTrendingVideos (search) error:', e)
+    }
+  }
+
+  // English regions or fallback: use chart mostPopular
   try {
     const res = await youtube.videos.list({
       key: apiKey,
@@ -368,9 +470,10 @@ export async function getTrendingVideos(regionCode = 'KR'): Promise<YouTubeVideo
       regionCode,
       part: ['snippet', 'contentDetails', 'statistics'],
       maxResults: 24,
+      pageToken,
     })
 
-    return (res.data.items || []).map(v => ({
+    const items = (res.data.items || []).map(v => ({
       id: v.id!,
       title: v.snippet?.title || '',
       description: v.snippet?.description || '',
@@ -381,23 +484,27 @@ export async function getTrendingVideos(regionCode = 'KR'): Promise<YouTubeVideo
       viewCount: formatViewCount(v.statistics?.viewCount || '0'),
       publishedAt: v.snippet?.publishedAt || '',
     }))
+    return { items, nextPageToken: res.data.nextPageToken ?? undefined }
   } catch (e) {
     console.error('YouTube getTrendingVideos error:', e)
-    return []
+    return { items: [] }
   }
 }
 
 export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
+  const lang = REGION_LANGUAGE[regionCode]
+  const q = SHORTS_QUERY[regionCode] || '#Shorts'
   try {
     const searchRes = await youtube.search.list({
       key: apiKey,
-      q: '#Shorts',
+      q,
       part: ['snippet'],
       type: ['video'],
       videoDuration: 'short',
       order: 'viewCount',
       regionCode,
+      ...(lang ? { relevanceLanguage: lang } : {}),
       maxResults: 20,
       pageToken,
     })
@@ -449,6 +556,7 @@ export async function getVideosByCategory(category: string, pageToken?: string, 
   }
   const q = categoryQueries[category] || category
 
+  const lang = REGION_LANGUAGE[regionCode]
   try {
     const searchRes = await youtube.search.list({
       key: apiKey,
@@ -457,6 +565,7 @@ export async function getVideosByCategory(category: string, pageToken?: string, 
       type: ['video'],
       order: 'viewCount',
       regionCode,
+      ...(lang ? { relevanceLanguage: lang } : {}),
       maxResults: 20,
       pageToken,
       videoDuration: 'medium',
@@ -507,6 +616,7 @@ export async function getRecommendedFeed(
     const seen = new Set<string>()
     const allItems: YouTubeVideo[] = []
 
+    const lang = REGION_LANGUAGE[regionCode]
     // Fetch topic-based search results (up to 3 queries, 8 results each)
     const querySlice = topics.slice(0, 3)
     const topicPromises = querySlice.map(q =>
@@ -517,6 +627,7 @@ export async function getRecommendedFeed(
         type: ['video'],
         maxResults: 8,
         regionCode,
+        ...(lang ? { relevanceLanguage: lang } : {}),
         pageToken,
         order: 'relevance',
       }).catch(() => null)
@@ -549,10 +660,10 @@ export async function getRecommendedFeed(
     }
 
     if (!videoIds.length) {
-      return getTrendingVideos(regionCode).then(videos => ({
-        items: videos,
-        nextPageToken: undefined,
-        totalResults: videos.length,
+      return getTrendingVideos(regionCode).then(result => ({
+        items: result.items,
+        nextPageToken: result.nextPageToken,
+        totalResults: result.items.length,
       }))
     }
 
