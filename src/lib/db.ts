@@ -633,6 +633,38 @@ export function getTempStream(videoId: string): { file_path: string; expires_at:
   return row ?? null
 }
 
+export function resetSession(sessionId: string): { deletedVideos: number; storageDeleted: string[] } {
+  db.pragma('foreign_keys = OFF')
+  const storageDeleted: string[] = []
+  try {
+    // Collect video storage paths before deleting
+    const videoRows = db.prepare('SELECT video_path FROM videos WHERE session_id = ?').all(sessionId) as { video_path: string | null }[]
+    for (const row of videoRows) {
+      if (row.video_path) {
+        const dir = path.dirname(row.video_path)
+        if (fs.existsSync(dir)) {
+          try { fs.rmSync(dir, { recursive: true, force: true }); storageDeleted.push(dir) } catch { /* ignore */ }
+        }
+      }
+    }
+
+    const deletedVideos = (db.prepare('DELETE FROM videos WHERE session_id = ?').run(sessionId)).changes
+    db.prepare('DELETE FROM watch_history WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM subscriptions WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM video_likes WHERE session_id = ?').run(sessionId)
+    db.prepare(`
+      DELETE FROM comment_likes WHERE comment_id IN (
+        SELECT id FROM comments WHERE session_id = ?
+      )
+    `).run(sessionId)
+    db.prepare('DELETE FROM comments WHERE session_id = ?').run(sessionId)
+    db.prepare('DELETE FROM batch_downloads').run()
+    return { deletedVideos, storageDeleted }
+  } finally {
+    db.pragma('foreign_keys = ON')
+  }
+}
+
 export function cleanupExpiredStreams(): void {
   const expired = db.prepare(`
     SELECT file_path FROM temp_streams WHERE expires_at <= datetime('now')

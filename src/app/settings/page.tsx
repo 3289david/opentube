@@ -25,6 +25,8 @@ export default function SettingsPage() {
   const [restoreToken, setRestoreToken] = useState('')
   const [restoreError, setRestoreError] = useState('')
   const [restoreSuccess, setRestoreSuccess] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
 
 
   useEffect(() => {
@@ -117,6 +119,30 @@ export default function SettingsPage() {
       }, 1500)
     } catch {
       setRestoreError('복원에 실패했습니다. 다시 시도해주세요')
+    }
+  }
+
+  const handleFullReset = async () => {
+    if (!confirm('다운로드 영상, 시청 기록, 구독, 좋아요를 모두 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다!')) return
+    if (!sessionToken) return
+    setResetting(true)
+    try {
+      const res = await fetch('/yt/api/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setResetDone(true)
+        setTimeout(() => { setResetDone(false); window.location.reload() }, 1500)
+      } else {
+        alert('초기화 실패: ' + (data.error || '알 수 없는 오류'))
+      }
+    } catch {
+      alert('초기화 중 오류가 발생했습니다')
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -290,6 +316,45 @@ export default function SettingsPage() {
         >
           {saved ? '✓ 저장됨' : '저장'}
         </button>
+      </div>
+
+      {/* Full Reset */}
+      <div className="bg-[#1a1a1a] border border-red-900/40 rounded-xl p-6 mb-4">
+        <h2 className="text-white font-semibold text-lg mb-2">데이터 초기화</h2>
+        <p className="text-gray-400 text-sm mb-4">
+          내 세션의 다운로드 영상, 시청 기록, 구독, 좋아요를 전부 삭제합니다. 삭제된 파일은 복구할 수 없습니다.
+        </p>
+        {resetDone ? (
+          <div className="flex items-center gap-2 text-green-400 text-sm">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            초기화 완료! 새로고침 중...
+          </div>
+        ) : (
+          <button
+            onClick={handleFullReset}
+            disabled={resetting || !sessionToken}
+            className="flex items-center gap-2 bg-red-700 text-white px-5 py-2.5 rounded-lg hover:bg-red-800 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {resetting ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                초기화 중...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                전체 초기화
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* App info */}
