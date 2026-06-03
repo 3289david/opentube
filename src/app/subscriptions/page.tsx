@@ -54,7 +54,7 @@ export default function SubscriptionsPage() {
         try {
           const res = await fetch(`/yt/api/channel/${ch.channel_id}?videos=1`)
           const data = await res.json()
-          allVideos.push(...(data.videos?.items || []).slice(0, 6))
+          allVideos.push(...(data.videos || []).slice(0, 6))
         } catch { /* skip */ }
       })
     )
@@ -71,7 +71,7 @@ export default function SubscriptionsPage() {
     try {
       const res = await fetch(`/yt/api/channel/${channelId}?videos=1`)
       const data = await res.json()
-      setFeed(data.videos?.items || [])
+      setFeed(data.videos || [])
     } catch {
       setFeed([])
     } finally {

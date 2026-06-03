@@ -5,6 +5,14 @@ import fs from 'fs'
 const YT_DLP = '/usr/local/bin/yt-dlp'
 const FFMPEG = '/usr/bin/ffmpeg'
 const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const COOKIES_FILE = '/root/yt-clone/youtube-cookies.txt'
+
+function cookiesArgs(): string[] {
+  try {
+    if (fs.existsSync(COOKIES_FILE)) return ['--cookies', COOKIES_FILE]
+  } catch { /* ignore */ }
+  return []
+}
 
 export interface DownloadResult {
   videoPath: string | null
@@ -55,6 +63,7 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
       '--ffmpeg-location', FFMPEG,
       '--js-runtimes', 'node:/usr/bin/node',
       '--extractor-args', 'youtube:player_client=android_vr,android',
+      ...cookiesArgs(),
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -144,6 +153,7 @@ export async function getVideoInfo(videoId: string): Promise<VideoInfo | null> {
     const proc = spawn(YT_DLP, [
       '--js-runtimes', 'node:/usr/bin/node',
       '--extractor-args', 'youtube:player_client=android_vr,android',
+      ...cookiesArgs(),
       '--dump-json', '--no-playlist', url,
     ])
 
@@ -181,6 +191,7 @@ export async function downloadPlaylist(playlistUrl: string, outputDir: string): 
       '--ffmpeg-location', FFMPEG,
       '--js-runtimes', 'node:/usr/bin/node',
       '--extractor-args', 'youtube:player_client=android_vr,android',
+      ...cookiesArgs(),
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -214,6 +225,7 @@ export async function downloadChannel(channelUrl: string, outputDir: string): Pr
       '--ffmpeg-location', FFMPEG,
       '--js-runtimes', 'node:/usr/bin/node',
       '--extractor-args', 'youtube:player_client=android_vr,android',
+      ...cookiesArgs(),
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',

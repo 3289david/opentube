@@ -8,6 +8,33 @@ function getApiKey(): string {
   return YOUTUBE_API_KEY
 }
 
+// Simple in-memory cache to reduce API quota usage
+interface CacheEntry<T> { data: T; expiresAt: number }
+const apiCache = new Map<string, CacheEntry<unknown>>()
+
+function cacheGet<T>(key: string): T | null {
+  const entry = apiCache.get(key) as CacheEntry<T> | undefined
+  if (!entry || Date.now() > entry.expiresAt) {
+    apiCache.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+function cacheSet<T>(key: string, data: T, ttlMs: number): void {
+  apiCache.set(key, { data, expiresAt: Date.now() + ttlMs })
+}
+
+const TTL = {
+  TRENDING: 60 * 60 * 1000,       // 1 hour
+  SEARCH: 30 * 60 * 1000,         // 30 minutes
+  CHANNEL_VIDEOS: 15 * 60 * 1000, // 15 minutes
+  VIDEO_DETAILS: 12 * 60 * 60 * 1000, // 12 hours
+  CHANNEL_DETAILS: 60 * 60 * 1000,    // 1 hour
+  SHORTS: 30 * 60 * 1000,         // 30 minutes
+  CATEGORY: 30 * 60 * 1000,       // 30 minutes
+}
+
 export interface YouTubeVideo {
   id: string
   title: string
@@ -143,6 +170,9 @@ function localizeQuery(q: string, lang?: string, regionCode?: string): string {
 
 export async function searchVideos(query: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
+  const cacheKey = `search:${query}:${pageToken}:${regionCode}`
+  const cached = cacheGet<YouTubeSearchResult>(cacheKey)
+  if (cached) return cached
 
   const lang = REGION_LANGUAGE[regionCode]
   try {
@@ -180,11 +210,13 @@ export async function searchVideos(query: string, pageToken?: string, regionCode
       liveBroadcastContent: v.snippet?.liveBroadcastContent || '',
     }))
 
-    return {
+    const result = {
       items,
       nextPageToken: searchRes.data.nextPageToken ?? undefined,
       totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
     }
+    cacheSet(cacheKey, result, TTL.SEARCH)
+    return result
   } catch (e) {
     console.error('YouTube searchVideos error:', e)
     return { items: [], totalResults: 0 }
@@ -194,6 +226,9 @@ export async function searchVideos(query: string, pageToken?: string, regionCode
 export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
   const apiKey = getApiKey()
   if (!apiKey) return []
+  const cacheKey = `searchChannels:${query}`
+  const cached = cacheGet<YouTubeChannel[]>(cacheKey)
+  if (cached) return cached
 
   try {
     const searchRes = await youtube.search.list({
@@ -214,7 +249,7 @@ export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
       part: ['snippet', 'statistics'],
     })
 
-    return (detailsRes.data.items || []).map(c => ({
+    const result = (detailsRes.data.items || []).map(c => ({
       id: c.id!,
       title: c.snippet?.title || '',
       description: c.snippet?.description || '',
@@ -223,6 +258,8 @@ export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
       videoCount: c.statistics?.videoCount || '0',
       customUrl: c.snippet?.customUrl || undefined,
     }))
+    cacheSet(cacheKey, result, TTL.SEARCH)
+    return result
   } catch (e) {
     console.error('YouTube searchChannels error:', e)
     return []
@@ -232,6 +269,9 @@ export async function searchChannels(query: string): Promise<YouTubeChannel[]> {
 export async function getVideoDetails(videoId: string): Promise<YouTubeVideo | null> {
   const apiKey = getApiKey()
   if (!apiKey) return null
+  const cacheKey = `videoDetails:${videoId}`
+  const cached = cacheGet<YouTubeVideo>(cacheKey)
+  if (cached) return cached
 
   try {
     const res = await youtube.videos.list({
@@ -243,7 +283,7 @@ export async function getVideoDetails(videoId: string): Promise<YouTubeVideo | n
     const v = res.data.items?.[0]
     if (!v) return null
 
-    return {
+    const result = {
       id: v.id!,
       title: v.snippet?.title || '',
       description: v.snippet?.description || '',
@@ -254,6 +294,8 @@ export async function getVideoDetails(videoId: string): Promise<YouTubeVideo | n
       viewCount: formatViewCount(v.statistics?.viewCount || '0'),
       publishedAt: v.snippet?.publishedAt || '',
     }
+    cacheSet(cacheKey, result, TTL.VIDEO_DETAILS)
+    return result
   } catch (e) {
     console.error('YouTube getVideoDetails error:', e)
     return null
@@ -263,6 +305,9 @@ export async function getVideoDetails(videoId: string): Promise<YouTubeVideo | n
 export async function getChannelDetails(channelId: string): Promise<YouTubeChannel | null> {
   const apiKey = getApiKey()
   if (!apiKey) return null
+  const cacheKey = `channelDetails:${channelId}`
+  const cached = cacheGet<YouTubeChannel>(cacheKey)
+  if (cached) return cached
 
   try {
     const res = await youtube.channels.list({
@@ -274,7 +319,7 @@ export async function getChannelDetails(channelId: string): Promise<YouTubeChann
     const c = res.data.items?.[0]
     if (!c) return null
 
-    return {
+    const result = {
       id: c.id!,
       title: c.snippet?.title || '',
       description: c.snippet?.description || '',
@@ -283,6 +328,8 @@ export async function getChannelDetails(channelId: string): Promise<YouTubeChann
       videoCount: c.statistics?.videoCount || '0',
       customUrl: c.snippet?.customUrl || undefined,
     }
+    cacheSet(cacheKey, result, TTL.CHANNEL_DETAILS)
+    return result
   } catch (e) {
     console.error('YouTube getChannelDetails error:', e)
     return null
@@ -292,6 +339,9 @@ export async function getChannelDetails(channelId: string): Promise<YouTubeChann
 export async function getChannelVideos(channelId: string, pageToken?: string): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
   if (!apiKey) return { items: [], totalResults: 0 }
+  const cacheKey = `channelVideos:${channelId}:${pageToken}`
+  const cached = cacheGet<YouTubeSearchResult>(cacheKey)
+  if (cached) return cached
 
   try {
     const searchRes = await youtube.search.list({
@@ -325,11 +375,13 @@ export async function getChannelVideos(channelId: string, pageToken?: string): P
       publishedAt: v.snippet?.publishedAt || '',
     }))
 
-    return {
+    const result = {
       items,
       nextPageToken: searchRes.data.nextPageToken ?? undefined,
       totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
     }
+    cacheSet(cacheKey, result, TTL.CHANNEL_VIDEOS)
+    return result
   } catch (e) {
     console.error('YouTube getChannelVideos error:', e)
     return { items: [], totalResults: 0 }
@@ -448,6 +500,10 @@ export async function getVideoComments(videoId: string): Promise<YouTubeComment[
 
 export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): Promise<{ items: YouTubeVideo[], nextPageToken?: string }> {
   const apiKey = getApiKey()
+  const cacheKey = `trending:${regionCode}:${pageToken}`
+  const cached = cacheGet<{ items: YouTubeVideo[], nextPageToken?: string }>(cacheKey)
+  if (cached) return cached
+
   const lang = REGION_LANGUAGE[regionCode]
   const trendingQuery = lang ? TRENDING_QUERY[lang] : undefined
 
@@ -491,7 +547,9 @@ export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): 
       }))
       // Hard-filter: drop titles that don't contain target-language script
       const items = allItems.filter(v => hasTargetScript(v.title, lang))
-      return { items: items.length >= 4 ? items : allItems, nextPageToken: searchRes.data.nextPageToken ?? undefined }
+      const result = { items: items.length >= 4 ? items : allItems, nextPageToken: searchRes.data.nextPageToken ?? undefined }
+      cacheSet(cacheKey, result, TTL.TRENDING)
+      return result
     } catch (e) {
       console.error('YouTube getTrendingVideos (search) error:', e)
     }
@@ -519,7 +577,9 @@ export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): 
       viewCount: formatViewCount(v.statistics?.viewCount || '0'),
       publishedAt: v.snippet?.publishedAt || '',
     }))
-    return { items, nextPageToken: res.data.nextPageToken ?? undefined }
+    const result = { items, nextPageToken: res.data.nextPageToken ?? undefined }
+    cacheSet(cacheKey, result, TTL.TRENDING)
+    return result
   } catch (e) {
     console.error('YouTube getTrendingVideos error:', e)
     return { items: [] }
@@ -528,6 +588,10 @@ export async function getTrendingVideos(regionCode = 'KR', pageToken?: string): 
 
 export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
+  const cacheKey = `shorts:${regionCode}:${pageToken}`
+  const cached = cacheGet<YouTubeSearchResult>(cacheKey)
+  if (cached) return cached
+
   const lang = REGION_LANGUAGE[regionCode]
   const q = SHORTS_QUERY[regionCode] || '#Shorts'
   try {
@@ -565,11 +629,13 @@ export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<
       publishedAt: v.snippet?.publishedAt || '',
     }))
 
-    return {
+    const result = {
       items,
       nextPageToken: searchRes.data.nextPageToken ?? undefined,
       totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
     }
+    cacheSet(cacheKey, result, TTL.SHORTS)
+    return result
   } catch (e) {
     console.error('YouTube getShorts error:', e)
     return { items: [], totalResults: 0 }
@@ -578,6 +644,10 @@ export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<
 
 export async function getVideosByCategory(category: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
+  const cacheKey = `category:${category}:${regionCode}:${pageToken}`
+  const cached = cacheGet<YouTubeSearchResult>(cacheKey)
+  if (cached) return cached
+
   const lang = REGION_LANGUAGE[regionCode]
 
   // Korean-primary queries; other regions fall back to English/mixed
@@ -648,11 +718,13 @@ export async function getVideosByCategory(category: string, pageToken?: string, 
 
     const items = lang !== 'en' ? allItems.filter(v => hasTargetScript(v.title, lang)) : allItems
 
-    return {
+    const result = {
       items: items.length >= 4 ? items : allItems,
       nextPageToken: searchRes.data.nextPageToken ?? undefined,
       totalResults: searchRes.data.pageInfo?.totalResults ?? 0,
     }
+    cacheSet(cacheKey, result, TTL.CATEGORY)
+    return result
   } catch (e) {
     console.error('YouTube getVideosByCategory error:', e)
     return { items: [], totalResults: 0 }

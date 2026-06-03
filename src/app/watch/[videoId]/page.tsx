@@ -142,7 +142,9 @@ export default function WatchPage() {
       // Load related videos using actual title for better results
       loadRelated(data?.title)
       // Save watch history immediately so iframe videos appear in history
+      // Use localStorage directly — sessionToken state may still be null here
       if (data?.title) {
+        const token = JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
         fetch('/yt/api/watch-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -152,7 +154,7 @@ export default function WatchPage() {
             title: data.title,
             channel: data.channel,
             thumbnail: data.thumbnail,
-            sessionToken,
+            sessionToken: token,
           }),
         }).catch(() => {})
       }
@@ -226,6 +228,7 @@ export default function WatchPage() {
     localStorage.setItem(`ot_pos_${videoId}`, String(time))
     if (Math.floor(time) % 10 === 0 && time > 5) {
       try {
+        const token = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
         await fetch('/yt/api/watch-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -235,7 +238,7 @@ export default function WatchPage() {
             title: video?.title,
             channel: video?.channel,
             thumbnail: video?.thumbnail,
-            sessionToken,
+            sessionToken: token,
           }),
         })
       } catch { /* */ }

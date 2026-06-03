@@ -21,6 +21,7 @@ async function downloadWithYtdlp(videoId: string, outputPath: string): Promise<v
       '--ffmpeg-location', FFMPEG,
       '--js-runtimes', 'node:/usr/bin/node',
       '--extractor-args', 'youtube:player_client=android_vr,android',
+      ...((() => { try { return require('fs').existsSync('/root/yt-clone/youtube-cookies.txt') ? ['--cookies', '/root/yt-clone/youtube-cookies.txt'] : [] } catch { return [] } })()),
       '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--ignore-errors',
