@@ -69,7 +69,6 @@ export async function POST(req: NextRequest) {
 
       // Download in background
       downloadVideo(videoId, outputDir).then(async (result) => {
-        // Update DB with file paths
         const info = await getVideoInfo(videoId).catch(() => null)
         insertVideo({
           id: videoId,

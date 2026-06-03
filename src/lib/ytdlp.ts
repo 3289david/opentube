@@ -17,7 +17,7 @@ export interface DownloadProgress {
   percent: number
   speed: string
   eta: string
-  status: 'downloading' | 'processing' | 'done' | 'error'
+  status: 'downloading' | 'processing' | 'done' | 'error' | 'bot_blocked'
   error?: string
 }
 
@@ -88,14 +88,22 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
       }
     })
 
+    let stderrLog = ''
     proc.stderr.on('data', (data: Buffer) => {
-      console.error('yt-dlp stderr:', data.toString())
+      const s = data.toString()
+      stderrLog += s
+      console.error('yt-dlp stderr:', s)
     })
 
     proc.on('close', (code) => {
       if (code !== 0) {
-        downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'error', error: `yt-dlp exited with code ${code}` })
-        reject(new Error(`yt-dlp exited with code ${code}`))
+        const botBlocked = stderrLog.includes('Sign in to confirm') || stderrLog.includes('bot')
+        if (botBlocked) {
+          downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'bot_blocked', error: '봇 감지: 임시 스트리밍으로 시청 가능' })
+        } else {
+          downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'error', error: `yt-dlp exited with code ${code}` })
+        }
+        reject(Object.assign(new Error(`yt-dlp exited with code ${code}`), { botBlocked }))
         return
       }
 

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getVideo, addTempStream, getTempStream } from '@/lib/db'
+import { getVideo, addTempStream, getTempStream, cleanupExpiredStreams } from '@/lib/db'
 import fs from 'fs'
 import path from 'path'
 import { spawn } from 'child_process'
 
 const TMP_STREAMS_DIR = '/tmp/ot-streams'
+const YT_DLP = '/usr/local/bin/yt-dlp'
+const FFMPEG = '/usr/bin/ffmpeg'
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) {
@@ -15,15 +17,20 @@ function ensureDir(dir: string) {
 async function downloadWithYtdlp(videoId: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ensureDir(path.dirname(outputPath))
-    const proc = spawn('yt-dlp', [
+    const proc = spawn(YT_DLP, [
+      '--ffmpeg-location', FFMPEG,
+      '--js-runtimes', 'node:/usr/bin/node',
+      '--extractor-args', 'youtube:player_client=android,web',
       '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
+      '--ignore-errors',
       '-o', outputPath,
       '--no-playlist',
       `https://www.youtube.com/watch?v=${videoId}`,
-    ])
+    ], { detached: true })
+    proc.stderr.on('data', (d: Buffer) => console.error('stream yt-dlp:', d.toString()))
     proc.on('close', (code) => {
-      if (code === 0) resolve()
+      if (code === 0 || (code === 1 && fs.existsSync(outputPath))) resolve()
       else reject(new Error(`yt-dlp exited with code ${code}`))
     })
     proc.on('error', reject)

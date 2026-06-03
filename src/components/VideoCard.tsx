@@ -36,6 +36,7 @@ export default function VideoCard({
 }: VideoCardProps) {
   const [downloading, setDownloading] = useState(false)
   const [downloaded, setDownloaded] = useState(isDownloaded || false)
+  const [botBlocked, setBotBlocked] = useState(false)
   const [imgError, setImgError] = useState(false)
 
   const handleDownload = async (e: React.MouseEvent) => {
@@ -61,6 +62,10 @@ export default function VideoCard({
             setDownloaded(true)
             setDownloading(false)
             onDownload?.(id)
+          } else if (data.status === 'bot_blocked') {
+            clearInterval(poll)
+            setDownloading(false)
+            setBotBlocked(true)
           } else if (data.status === 'error') {
             clearInterval(poll)
             setDownloading(false)
@@ -103,28 +108,42 @@ export default function VideoCard({
             </div>
           )}
           {/* Download overlay button */}
-          <button
-            onClick={handleDownload}
-            className={`absolute top-2 right-2 p-2 rounded-full transition-all
-              ${downloaded ? 'bg-green-600 opacity-100' : 'bg-black/70 opacity-0 group-hover:opacity-100 hover:bg-[#ff0000]'}
-              ${downloading ? 'opacity-100 animate-pulse' : ''}`}
-            title={downloaded ? '다운로드됨' : '다운로드'}
-          >
-            {downloaded ? (
+          {botBlocked ? (
+            <Link
+              href={`/watch/${id}`}
+              onClick={e => e.stopPropagation()}
+              className="absolute top-2 right-2 p-2 rounded-full bg-yellow-500/90 opacity-100 flex items-center justify-center"
+              title="봇 차단 - 임시 스트리밍으로 시청"
+            >
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-            ) : downloading ? (
-              <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-            ) : (
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            )}
-          </button>
+            </Link>
+          ) : (
+            <button
+              onClick={handleDownload}
+              className={`absolute top-2 right-2 p-2 rounded-full transition-all
+                ${downloaded ? 'bg-green-600 opacity-100' : 'bg-black/70 opacity-0 group-hover:opacity-100 hover:bg-[#ff0000]'}
+                ${downloading ? 'opacity-100 animate-pulse' : ''}`}
+              title={downloaded ? '다운로드됨' : '다운로드'}
+            >
+              {downloaded ? (
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : downloading ? (
+                <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Info */}
