@@ -28,6 +28,7 @@ async function downloadWithYtdlp(videoId: string, outputPath: string): Promise<v
       '--no-playlist',
       `https://www.youtube.com/watch?v=${videoId}`,
     ], { detached: true })
+    proc.unref()
     proc.stderr.on('data', (d: Buffer) => console.error('stream yt-dlp:', d.toString()))
     proc.on('close', (code) => {
       if (code === 0 || (code === 1 && fs.existsSync(outputPath))) resolve()

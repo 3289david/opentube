@@ -70,6 +70,7 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
     ]
 
     const proc = spawn(YT_DLP, args, { cwd: dir, detached: true })
+    proc.unref()
 
     proc.stdout.on('data', (data: Buffer) => {
       const line = data.toString()
