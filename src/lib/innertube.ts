@@ -202,7 +202,7 @@ function mergeAV(videoPath: string, audioPath: string, outputPath: string): Prom
   })
 }
 
-export async function downloadViaInnerTube(videoId: string, outputDir: string): Promise<string | null> {
+export async function downloadViaInnerTube(videoId: string, outputDir: string, maxHeight = 99999): Promise<string | null> {
   fs.mkdirSync(outputDir, { recursive: true })
 
   const data = await callInnerTube(videoId)
@@ -215,7 +215,7 @@ export async function downloadViaInnerTube(videoId: string, outputDir: string): 
 
   // For downloads, prefer best quality video+audio (separate then merge)
   const videoFormats = all
-    .filter(f => f.mimeType?.includes('video/mp4') && !f.audioChannels)
+    .filter(f => f.mimeType?.includes('video/mp4') && !f.audioChannels && (f.height || 0) <= maxHeight)
     .sort((a, b) => (b.height || 0) - (a.height || 0))
   const audioFormats = all
     .filter(f => f.mimeType?.includes('audio/mp4') || f.mimeType?.includes('audio/webm'))

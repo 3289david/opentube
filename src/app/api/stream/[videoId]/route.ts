@@ -116,7 +116,7 @@ export async function GET(
   let downloaded = false
 
   try {
-    const result = await downloadViaInnerTube(videoId, videoDir)
+    const result = await downloadViaInnerTube(videoId, videoDir, 1080)
     if (result && fs.existsSync(result)) {
       downloaded = true
       // outputPath may differ from result if downloadViaInnerTube chose a different name
