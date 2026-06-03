@@ -152,6 +152,7 @@ export default function WatchPage() {
             title: data.title,
             channel: data.channel,
             thumbnail: data.thumbnail,
+            sessionToken,
           }),
         }).catch(() => {})
       }
@@ -204,7 +205,8 @@ export default function WatchPage() {
     const stored = localStorage.getItem(`ot_pos_${videoId}`)
     if (stored) { setResumePosition(parseFloat(stored)); return }
     try {
-      const res = await fetch(`/yt/api/watch-history?videoId=${videoId}`)
+      const token = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+      const res = await fetch(`/yt/api/watch-history?videoId=${videoId}&sessionToken=${encodeURIComponent(token)}`)
       const data = await res.json()
       if (data.watchTime > 0) setResumePosition(data.watchTime)
     } catch { /* */ }
@@ -212,7 +214,8 @@ export default function WatchPage() {
 
   const checkSubscription = async (channelId: string) => {
     try {
-      const res = await fetch('/yt/api/subscriptions')
+      const token = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+      const res = await fetch(`/yt/api/subscriptions?sessionToken=${encodeURIComponent(token)}`)
       const data = await res.json()
       const subs: { channel_id: string }[] = data.subscriptions || []
       setIsSubscribed(subs.some(s => s.channel_id === channelId))
@@ -232,6 +235,7 @@ export default function WatchPage() {
             title: video?.title,
             channel: video?.channel,
             thumbnail: video?.thumbnail,
+            sessionToken,
           }),
         })
       } catch { /* */ }
@@ -270,7 +274,7 @@ export default function WatchPage() {
   const handleSubscribe = async () => {
     if (!video?.channelId) return
     if (isSubscribed) {
-      await fetch(`/yt/api/subscriptions?channelId=${encodeURIComponent(video.channelId)}`, {
+      await fetch(`/yt/api/subscriptions?channelId=${encodeURIComponent(video.channelId)}&sessionToken=${encodeURIComponent(sessionToken || '')}`, {
         method: 'DELETE',
       })
       setIsSubscribed(false)
@@ -278,7 +282,7 @@ export default function WatchPage() {
       await fetch('/yt/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId: video.channelId, channelName: video.channel }),
+        body: JSON.stringify({ channelId: video.channelId, channelName: video.channel, sessionToken }),
       })
       setIsSubscribed(true)
     }

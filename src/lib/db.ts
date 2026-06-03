@@ -48,10 +48,12 @@ function initializeSchema(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS subscriptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      channel_id TEXT UNIQUE NOT NULL,
+      session_id TEXT NOT NULL DEFAULT '',
+      channel_id TEXT NOT NULL,
       channel_name TEXT NOT NULL,
       channel_thumbnail TEXT,
-      subscribed_at TEXT DEFAULT (datetime('now'))
+      subscribed_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(session_id, channel_id)
     );
 
     CREATE TABLE IF NOT EXISTS playlists (
@@ -162,6 +164,31 @@ function initializeSchema(db: Database.Database): void {
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN title TEXT`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN channel TEXT`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN thumbnail TEXT`) } catch { /* already exists */ }
+  try { db.exec(`ALTER TABLE watch_history ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`) } catch { /* already exists */ }
+
+  // Migrate subscriptions to per-session (old table had UNIQUE on channel_id only)
+  try {
+    const cols = (db.prepare(`PRAGMA table_info(subscriptions)`).all() as {name: string}[]).map(c => c.name)
+    if (!cols.includes('session_id')) {
+      db.pragma('foreign_keys = OFF')
+      db.exec(`
+        CREATE TABLE subscriptions_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL DEFAULT '',
+          channel_id TEXT NOT NULL,
+          channel_name TEXT NOT NULL,
+          channel_thumbnail TEXT,
+          subscribed_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(session_id, channel_id)
+        );
+        INSERT OR IGNORE INTO subscriptions_new (session_id, channel_id, channel_name, channel_thumbnail, subscribed_at)
+          SELECT '', channel_id, channel_name, channel_thumbnail, subscribed_at FROM subscriptions;
+        DROP TABLE subscriptions;
+        ALTER TABLE subscriptions_new RENAME TO subscriptions;
+      `)
+      db.pragma('foreign_keys = ON')
+    }
+  } catch { /* already migrated */ }
 
   // Remove FK constraint on watch_history.video_id — history must record any video, not just downloaded ones
   try {
@@ -311,20 +338,20 @@ export interface WatchHistoryRecord {
   watched_at: string
 }
 
-export function getWatchPosition(videoId: string): number {
+export function getWatchPosition(videoId: string, sessionId = ''): number {
   const row = db.prepare(
-    'SELECT watch_time FROM watch_history WHERE video_id = ? ORDER BY watched_at DESC LIMIT 1'
-  ).get(videoId) as { watch_time: number } | undefined
+    'SELECT watch_time FROM watch_history WHERE video_id = ? AND session_id = ? ORDER BY watched_at DESC LIMIT 1'
+  ).get(videoId, sessionId) as { watch_time: number } | undefined
   return row?.watch_time ?? 0
 }
 
-export function saveWatchPosition(videoId: string, watchTime: number, meta?: { title?: string; channel?: string; thumbnail?: string }): void {
+export function saveWatchPosition(videoId: string, watchTime: number, meta?: { title?: string; channel?: string; thumbnail?: string }, sessionId = ''): void {
   db.prepare(`
-    INSERT INTO watch_history (video_id, watch_time, title, channel, thumbnail) VALUES (?, ?, ?, ?, ?)
-  `).run(videoId, watchTime, meta?.title ?? null, meta?.channel ?? null, meta?.thumbnail ?? null)
+    INSERT INTO watch_history (video_id, watch_time, title, channel, thumbnail, session_id) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(videoId, watchTime, meta?.title ?? null, meta?.channel ?? null, meta?.thumbnail ?? null, sessionId)
 }
 
-export function getRecentHistory(limit = 30): WatchHistoryRecord[] {
+export function getRecentHistory(limit = 30, sessionId = ''): WatchHistoryRecord[] {
   return db.prepare(`
     SELECT DISTINCT video_id,
       FIRST_VALUE(title) OVER (PARTITION BY video_id ORDER BY watched_at DESC) as title,
@@ -333,14 +360,15 @@ export function getRecentHistory(limit = 30): WatchHistoryRecord[] {
       MAX(watch_time) as watch_time,
       MAX(watched_at) as watched_at
     FROM watch_history
+    WHERE session_id = ?
     GROUP BY video_id
     ORDER BY MAX(watched_at) DESC
     LIMIT ?
-  `).all(limit) as WatchHistoryRecord[]
+  `).all(sessionId, limit) as WatchHistoryRecord[]
 }
 
-export function clearHistory(): void {
-  db.prepare('DELETE FROM watch_history').run()
+export function clearHistory(sessionId = ''): void {
+  db.prepare('DELETE FROM watch_history WHERE session_id = ?').run(sessionId)
 }
 
 // ─────────────────────────── Subscriptions ────────────────────────────────────
@@ -353,23 +381,23 @@ export interface SubscriptionRecord {
   subscribed_at: string
 }
 
-export function getSubscriptions(): SubscriptionRecord[] {
-  return db.prepare('SELECT * FROM subscriptions ORDER BY channel_name ASC').all() as SubscriptionRecord[]
+export function getSubscriptions(sessionId = ''): SubscriptionRecord[] {
+  return db.prepare('SELECT * FROM subscriptions WHERE session_id = ? ORDER BY channel_name ASC').all(sessionId) as SubscriptionRecord[]
 }
 
-export function addSubscription(channelId: string, channelName: string, channelThumbnail?: string): void {
+export function addSubscription(channelId: string, channelName: string, sessionId = '', channelThumbnail?: string): void {
   db.prepare(`
-    INSERT OR IGNORE INTO subscriptions (channel_id, channel_name, channel_thumbnail)
-    VALUES (?, ?, ?)
-  `).run(channelId, channelName, channelThumbnail ?? null)
+    INSERT OR IGNORE INTO subscriptions (session_id, channel_id, channel_name, channel_thumbnail)
+    VALUES (?, ?, ?, ?)
+  `).run(sessionId, channelId, channelName, channelThumbnail ?? null)
 }
 
-export function removeSubscription(channelId: string): void {
-  db.prepare('DELETE FROM subscriptions WHERE channel_id = ?').run(channelId)
+export function removeSubscription(channelId: string, sessionId = ''): void {
+  db.prepare('DELETE FROM subscriptions WHERE channel_id = ? AND session_id = ?').run(channelId, sessionId)
 }
 
-export function isSubscribed(channelId: string): boolean {
-  return !!db.prepare('SELECT id FROM subscriptions WHERE channel_id = ?').get(channelId)
+export function isSubscribed(channelId: string, sessionId = ''): boolean {
+  return !!db.prepare('SELECT id FROM subscriptions WHERE channel_id = ? AND session_id = ?').get(channelId, sessionId)
 }
 
 // ─────────────────────────── Batch downloads ──────────────────────────────────

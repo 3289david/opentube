@@ -31,7 +31,8 @@ export default function SubscriptionsPage() {
   const [activeChannel, setActiveChannel] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/yt/api/subscriptions')
+    const token = JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+    fetch(`/yt/api/subscriptions?sessionToken=${encodeURIComponent(token)}`)
       .then(r => r.json())
       .then(d => {
         setSubs(d.subscriptions || [])
@@ -41,6 +42,7 @@ export default function SubscriptionsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const loadFeed = async (channels: Subscription[] = subs) => {
@@ -78,7 +80,8 @@ export default function SubscriptionsPage() {
   }
 
   const unsubscribe = async (channelId: string) => {
-    await fetch(`/yt/api/subscriptions?channelId=${channelId}`, { method: 'DELETE' })
+    const token = JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+    await fetch(`/yt/api/subscriptions?channelId=${channelId}&sessionToken=${encodeURIComponent(token)}`, { method: 'DELETE' })
     setSubs(prev => prev.filter(s => s.channel_id !== channelId))
     if (activeChannel === channelId) {
       setActiveChannel(null)

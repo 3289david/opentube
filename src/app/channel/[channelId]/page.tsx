@@ -55,17 +55,21 @@ export default function ChannelPage() {
     }
   }
 
+  const getToken = () => JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+
   const checkSubscription = async () => {
     try {
-      const res = await fetch('/yt/api/subscriptions')
+      const token = getToken()
+      const res = await fetch(`/yt/api/subscriptions?sessionToken=${encodeURIComponent(token)}`)
       const data = await res.json()
       setIsSubscribed((data.subscriptions || []).some((s: { channel_id: string }) => s.channel_id === channelId))
     } catch { }
   }
 
   const toggleSubscribe = async () => {
+    const token = getToken()
     if (isSubscribed) {
-      await fetch(`/yt/api/subscriptions?channelId=${channelId}`, { method: 'DELETE' })
+      await fetch(`/yt/api/subscriptions?channelId=${channelId}&sessionToken=${encodeURIComponent(token)}`, { method: 'DELETE' })
       setIsSubscribed(false)
     } else {
       await fetch('/yt/api/subscriptions', {
@@ -75,6 +79,7 @@ export default function ChannelPage() {
           channelId,
           channelName: channel?.title || '',
           channelThumbnail: channel?.thumbnail || '',
+          sessionToken: token,
         }),
       })
       setIsSubscribed(true)

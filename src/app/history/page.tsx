@@ -72,9 +72,12 @@ export default function HistoryPage() {
   const [clearing, setClearing] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
 
+  const getToken = () => JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+
   const loadHistory = useCallback(async () => {
     try {
-      const res = await fetch('/yt/api/watch-history?all=1')
+      const token = getToken()
+      const res = await fetch(`/yt/api/watch-history?all=1&sessionToken=${encodeURIComponent(token)}`)
       const data = await res.json()
       const items: HistoryItem[] = data.history || []
       setHistory(items)
@@ -100,7 +103,8 @@ export default function HistoryPage() {
   const removeItem = async (videoId: string) => {
     setRemoving(videoId)
     try {
-      await fetch(`/yt/api/watch-history?videoId=${encodeURIComponent(videoId)}`, { method: 'DELETE' })
+      const token = getToken()
+      await fetch(`/yt/api/watch-history?videoId=${encodeURIComponent(videoId)}&sessionToken=${encodeURIComponent(token)}`, { method: 'DELETE' })
       setHistory(prev => prev.filter(h => h.video_id !== videoId))
     } finally {
       setRemoving(null)
@@ -110,7 +114,8 @@ export default function HistoryPage() {
   const clearAll = async () => {
     if (!confirm('시청 기록을 모두 삭제하시겠습니까?')) return
     setClearing(true)
-    await fetch('/yt/api/watch-history', { method: 'DELETE' })
+    const token = getToken()
+    await fetch(`/yt/api/watch-history?sessionToken=${encodeURIComponent(token)}`, { method: 'DELETE' })
     setHistory([])
     setFiltered([])
     setClearing(false)

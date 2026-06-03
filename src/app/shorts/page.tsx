@@ -20,6 +20,7 @@ export default function ShortsPage() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [muted, setMuted] = useState(true)
   const [liked, setLiked] = useState<Record<string, boolean>>({})
+  const [sessionToken, setSessionToken] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
@@ -30,6 +31,8 @@ export default function ShortsPage() {
     const r = localStorage.getItem('ot_region') || 'KR'
     regionRef.current = r
     loadShorts(r)
+    const token = JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+    setSessionToken(token)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -124,6 +127,7 @@ export default function ShortsPage() {
         title: short.title,
         channel: short.channelTitle,
         thumbnail: short.thumbnail,
+        sessionToken,
       }),
     }).catch(() => {})
   }, [activeIndex, shorts])
