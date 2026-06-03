@@ -65,6 +65,7 @@ export default function WatchPage() {
   const [selectedFolder, setSelectedFolder] = useState('기타')
   const [descExpanded, setDescExpanded] = useState(false)
   const [showComments, setShowComments] = useState(true)
+  const [downloadToPC, setDownloadToPC] = useState(false)
 
   // Session
   const [session, setSession] = useState<Session | null>(null)
@@ -248,14 +249,31 @@ export default function WatchPage() {
   const startDownload = async () => {
     setDownloadStarted(true)
     try {
+      const token = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
       await fetch('/yt/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, folder: selectedFolder }),
+        body: JSON.stringify({ videoId, folder: selectedFolder, sessionToken: token }),
       })
     } catch {
       setDownloadStarted(false)
     }
+  }
+
+  const downloadToComputer = () => {
+    if (!video?.videoPath) return
+    const filename = video.videoPath.split('/').pop() || `${videoId}.mp4`
+    const a = document.createElement('a')
+    a.href = `/yt/api/storage/${videoId}/${encodeURIComponent(filename)}?download=1`
+    a.download = `${video.title || videoId}.mp4`
+    a.click()
+  }
+
+  const downloadOfflineZip = () => {
+    const a = document.createElement('a')
+    a.href = `/yt/api/library/export?type=zip&videoId=${videoId}`
+    a.download = `${videoId}.zip`
+    a.click()
   }
 
   const handleLike = async (type: 'like' | 'dislike') => {
@@ -523,6 +541,10 @@ export default function WatchPage() {
                       <option value="음악">음악</option>
                       <option value="게임">게임</option>
                     </select>
+                    <label className="flex items-center gap-1.5 text-gray-400 text-sm cursor-pointer select-none">
+                      <input type="checkbox" checked={downloadToPC} onChange={e => setDownloadToPC(e.target.checked)} className="accent-red-500" />
+                      PC로도 저장
+                    </label>
                     <button
                       onClick={startDownload}
                       className="flex items-center gap-2 bg-[#ff0000] text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium text-sm"
@@ -530,16 +552,38 @@ export default function WatchPage() {
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                       </svg>
-                      다운로드
+                      서버에 저장
                     </button>
                   </>
                 )}
                 {video.isLocal && (
-                  <div className="flex items-center gap-2 text-green-400">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-sm">다운로드됨</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 text-green-400">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-sm">저장됨</span>
+                    </div>
+                    <button
+                      onClick={downloadToComputer}
+                      title="MP4 파일을 내 PC로 다운로드"
+                      className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#333] text-gray-300 px-3 py-1.5 rounded-lg hover:bg-[#222] hover:text-white transition-colors text-sm"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      PC 다운로드
+                    </button>
+                    <button
+                      onClick={downloadOfflineZip}
+                      title="오프라인 플레이어 패키지 (ZIP)"
+                      className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#333] text-gray-300 px-3 py-1.5 rounded-lg hover:bg-[#222] hover:text-white transition-colors text-sm"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      오프라인 패키지
+                    </button>
                   </div>
                 )}
               </div>
@@ -550,7 +594,15 @@ export default function WatchPage() {
               <div className="mb-4">
                 <DownloadProgress
                   videoId={videoId}
-                  onComplete={() => { loadVideo() }}
+                  onComplete={() => {
+                    loadVideo()
+                    if (downloadToPC) {
+                      const a = document.createElement('a')
+                      a.href = `/yt/api/storage/${videoId}/${videoId}.mp4?download=1`
+                      a.download = `${video?.title || videoId}.mp4`
+                      a.click()
+                    }
+                  }}
                   onCancel={() => { setDownloadStarted(false) }}
                 />
               </div>

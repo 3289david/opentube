@@ -166,6 +166,74 @@ function initializeSchema(db: Database.Database): void {
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN thumbnail TEXT`) } catch { /* already exists */ }
   try { db.exec(`ALTER TABLE watch_history ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`) } catch { /* already exists */ }
 
+  // Migrate videos to composite PK (id, session_id) for per-session library isolation
+  try {
+    const videoCols = (db.prepare('PRAGMA table_info(videos)').all() as { name: string }[]).map(c => c.name)
+    if (!videoCols.includes('session_id')) {
+      db.pragma('foreign_keys = OFF')
+      db.exec(`
+        CREATE TABLE videos_tmp (
+          id TEXT NOT NULL,
+          session_id TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          channel_id TEXT,
+          duration INTEGER DEFAULT 0,
+          upload_date TEXT,
+          description TEXT,
+          thumbnail_path TEXT,
+          video_path TEXT,
+          captions_path TEXT,
+          metadata_json TEXT,
+          folder TEXT DEFAULT '기타',
+          sha256 TEXT,
+          downloaded_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (id, session_id)
+        );
+        INSERT OR IGNORE INTO videos_tmp
+          (id, session_id, title, channel, channel_id, duration, upload_date, description,
+           thumbnail_path, video_path, captions_path, metadata_json, folder, sha256, downloaded_at)
+          SELECT id, '', title, channel, channel_id, duration, upload_date, description,
+                 thumbnail_path, video_path, captions_path, metadata_json, folder, sha256, downloaded_at
+          FROM videos;
+        DROP TABLE videos;
+        ALTER TABLE videos_tmp RENAME TO videos;
+      `)
+      db.exec(`
+        DROP TABLE IF EXISTS search_index;
+        CREATE VIRTUAL TABLE search_index USING fts5(
+          video_id UNINDEXED,
+          title,
+          description,
+          channel,
+          captions,
+          content='videos',
+          content_rowid='rowid'
+        );
+        INSERT INTO search_index(rowid, video_id, title, description, channel, captions)
+          SELECT rowid, id, title, COALESCE(description, ''), channel, '' FROM videos;
+        DROP TRIGGER IF EXISTS videos_ai;
+        DROP TRIGGER IF EXISTS videos_ad;
+        DROP TRIGGER IF EXISTS videos_au;
+        CREATE TRIGGER videos_ai AFTER INSERT ON videos BEGIN
+          INSERT INTO search_index(rowid, video_id, title, description, channel, captions)
+          VALUES (new.rowid, new.id, new.title, COALESCE(new.description, ''), new.channel, '');
+        END;
+        CREATE TRIGGER videos_ad AFTER DELETE ON videos BEGIN
+          INSERT INTO search_index(search_index, rowid, video_id, title, description, channel, captions)
+          VALUES ('delete', old.rowid, old.id, old.title, COALESCE(old.description, ''), old.channel, '');
+        END;
+        CREATE TRIGGER videos_au AFTER UPDATE ON videos BEGIN
+          INSERT INTO search_index(search_index, rowid, video_id, title, description, channel, captions)
+          VALUES ('delete', old.rowid, old.id, old.title, COALESCE(old.description, ''), old.channel, '');
+          INSERT INTO search_index(rowid, video_id, title, description, channel, captions)
+          VALUES (new.rowid, new.id, new.title, COALESCE(new.description, ''), new.channel, '');
+        END;
+      `)
+      db.pragma('foreign_keys = ON')
+    }
+  } catch (e) { console.error('videos session migration failed:', e) }
+
   // Migrate subscriptions to per-session (old table had UNIQUE on channel_id only)
   try {
     const cols = (db.prepare(`PRAGMA table_info(subscriptions)`).all() as {name: string}[]).map(c => c.name)
@@ -220,6 +288,7 @@ export const db = getDb()
 
 export interface VideoRecord {
   id: string
+  session_id: string
   title: string
   channel: string
   channel_id?: string
@@ -235,55 +304,61 @@ export interface VideoRecord {
   downloaded_at: string
 }
 
-export function getVideo(id: string): VideoRecord | undefined {
+// sessionId optional: undefined = any session (for stream route), string = specific session
+export function getVideo(id: string, sessionId?: string): VideoRecord | undefined {
+  if (sessionId !== undefined) {
+    return db.prepare('SELECT * FROM videos WHERE id = ? AND session_id = ?').get(id, sessionId) as VideoRecord | undefined
+  }
   return db.prepare('SELECT * FROM videos WHERE id = ?').get(id) as VideoRecord | undefined
 }
 
-export function getAllVideos(folder?: string, search?: string, sort = 'downloaded_at', limit?: number): VideoRecord[] {
+export function getAllVideos(folder?: string, search?: string, sort = 'downloaded_at', limit?: number, sessionId?: string): VideoRecord[] {
   const validSorts = ['downloaded_at', 'title', 'duration', 'upload_date']
   const orderBy = validSorts.includes(sort) ? sort : 'downloaded_at'
   const limitClause = limit ? `LIMIT ${limit}` : ''
+  const sid = sessionId ?? ''
 
   if (search && search.trim()) {
     return db.prepare(`
       SELECT v.* FROM search_index si
-      JOIN videos v ON v.id = si.video_id
+      JOIN videos v ON v.rowid = si.rowid
       WHERE search_index MATCH ?
+      AND v.session_id = ?
       ${folder ? 'AND v.folder = ?' : ''}
       ORDER BY v.${orderBy} DESC
       ${limitClause}
-    `).all(folder ? [search, folder] : [search]) as VideoRecord[]
+    `).all(folder ? [search, sid, folder] : [search, sid]) as VideoRecord[]
   }
 
   if (folder) {
-    return db.prepare(`SELECT * FROM videos WHERE folder = ? ORDER BY ${orderBy} DESC ${limitClause}`).all(folder) as VideoRecord[]
+    return db.prepare(`SELECT * FROM videos WHERE session_id = ? AND folder = ? ORDER BY ${orderBy} DESC ${limitClause}`).all(sid, folder) as VideoRecord[]
   }
-  return db.prepare(`SELECT * FROM videos ORDER BY ${orderBy} DESC ${limitClause}`).all() as VideoRecord[]
+  return db.prepare(`SELECT * FROM videos WHERE session_id = ? ORDER BY ${orderBy} DESC ${limitClause}`).all(sid) as VideoRecord[]
 }
 
-export function insertVideo(video: Omit<VideoRecord, 'downloaded_at'>): void {
+export function insertVideo(video: Omit<VideoRecord, 'downloaded_at' | 'session_id'>, sessionId = ''): void {
   db.prepare(`
     INSERT OR REPLACE INTO videos
-    (id, title, channel, channel_id, duration, upload_date, description, thumbnail_path, video_path, captions_path, metadata_json, folder, sha256)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, session_id, title, channel, channel_id, duration, upload_date, description, thumbnail_path, video_path, captions_path, metadata_json, folder, sha256)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    video.id, video.title, video.channel, video.channel_id ?? null,
+    video.id, sessionId, video.title, video.channel, video.channel_id ?? null,
     video.duration ?? 0, video.upload_date ?? null, video.description ?? null,
     video.thumbnail_path ?? null, video.video_path ?? null, video.captions_path ?? null,
     video.metadata_json ?? null, video.folder ?? '기타', video.sha256 ?? null
   )
 }
 
-export function deleteVideo(id: string): void {
-  db.prepare('DELETE FROM videos WHERE id = ?').run(id)
+export function deleteVideo(id: string, sessionId = ''): void {
+  db.prepare('DELETE FROM videos WHERE id = ? AND session_id = ?').run(id, sessionId)
 }
 
-export function moveVideoToFolder(videoId: string, folder: string): void {
-  db.prepare('UPDATE videos SET folder = ? WHERE id = ?').run(folder, videoId)
+export function moveVideoToFolder(videoId: string, folder: string, sessionId = ''): void {
+  db.prepare('UPDATE videos SET folder = ? WHERE id = ? AND session_id = ?').run(folder, videoId, sessionId)
 }
 
-export function updateVideoSha256(videoId: string, sha256: string): void {
-  db.prepare('UPDATE videos SET sha256 = ? WHERE id = ?').run(sha256, videoId)
+export function updateVideoSha256(videoId: string, sha256: string, sessionId = ''): void {
+  db.prepare('UPDATE videos SET sha256 = ? WHERE id = ? AND session_id = ?').run(sha256, videoId, sessionId)
 }
 
 export function findDuplicates(): { id: string; title: string; sha256: string; count: number }[] {
@@ -439,9 +514,9 @@ export function getBatchDownloads(): BatchDownload[] {
 
 // ─────────────────────────── Storage stats ────────────────────────────────────
 
-export function getStorageStats(): { videoCount: number; folderCounts: Record<string, number>; storagePath: string } {
-  const videoCount = (db.prepare('SELECT COUNT(*) as count FROM videos').get() as { count: number }).count
-  const folderRows = db.prepare('SELECT folder, COUNT(*) as count FROM videos GROUP BY folder').all() as { folder: string; count: number }[]
+export function getStorageStats(sessionId = ''): { videoCount: number; folderCounts: Record<string, number>; storagePath: string } {
+  const videoCount = (db.prepare('SELECT COUNT(*) as count FROM videos WHERE session_id = ?').get(sessionId) as { count: number }).count
+  const folderRows = db.prepare('SELECT folder, COUNT(*) as count FROM videos WHERE session_id = ? GROUP BY folder').all(sessionId) as { folder: string; count: number }[]
   const folderCounts: Record<string, number> = {}
   for (const row of folderRows) folderCounts[row.folder] = row.count
   return { videoCount, folderCounts, storagePath: STORAGE_ROOT }

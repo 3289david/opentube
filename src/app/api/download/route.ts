@@ -5,6 +5,7 @@ import fs from 'fs'
 import { downloadProgress } from '@/lib/ytdlp'
 import { getVideoMeta } from '@/lib/innertube'
 import { insertVideo, getVideo } from '@/lib/db'
+import { verifySession } from '@/lib/session'
 
 const STORAGE_ROOT = '/root/yt-clone/storage'
 const YT_DLP = '/usr/local/bin/yt-dlp'
@@ -80,14 +81,16 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { videoId, folder = '기타', playlistUrl } = body
+    const { videoId, folder = '기타', playlistUrl, sessionToken } = body
+    const sessionPayload = sessionToken ? verifySession(sessionToken) : null
+    const sessionId = sessionPayload?.sessionId ?? ''
 
     if (!videoId && !playlistUrl) {
       return NextResponse.json({ error: 'videoId or playlistUrl required' }, { status: 400 })
     }
 
     if (videoId) {
-      const existing = getVideo(videoId)
+      const existing = getVideo(videoId, sessionId)
       if (existing?.video_path) return NextResponse.json({ status: 'already_downloaded', videoId })
 
       const outputDir = path.join(STORAGE_ROOT, videoId)
@@ -104,7 +107,7 @@ export async function POST(req: NextRequest) {
               upload_date: '', description: meta.description?.slice(0, 2000),
               thumbnail_path: undefined, video_path: undefined,
               captions_path: undefined, metadata_json: undefined, folder,
-            })
+            }, sessionId)
           }
 
           downloadProgress.set(videoId, { percent: 10, speed: '', eta: '', status: 'downloading' })
@@ -132,7 +135,7 @@ export async function POST(req: NextRequest) {
             captions_path: undefined,
             metadata_json: undefined,
             folder,
-          })
+          }, sessionId)
         } catch (err) {
           console.error('Download failed:', err)
           downloadProgress.set(videoId, { percent: 0, speed: '', eta: '', status: 'error', error: String(err) })

@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { getAllVideos, getVideo, VideoRecord } from './db'
 
-const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const STORAGE_ROOT = '/root/yt-clone/storage'
 
 function getVideoStorageDir(videoId: string): string {
   return path.join(STORAGE_ROOT, videoId)

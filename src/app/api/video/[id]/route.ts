@@ -13,8 +13,11 @@ export async function GET(
   const wantsLikes = searchParams.get('likes') === '1'
   const sessionToken = searchParams.get('sessionToken')
 
-  // Check local DB first
-  const localVideo = getVideo(id)
+  const session = sessionToken ? verifySession(sessionToken) : null
+  const sessionId = session?.sessionId ?? ''
+
+  // Check local DB for this session's download
+  const localVideo = getVideo(id, sessionId)
 
   if (wantsComments) {
     const comments = await getVideoComments(id).catch(() => [])
@@ -24,10 +27,7 @@ export async function GET(
   if (wantsLikes) {
     const { likes, dislikes } = getVideoLikes(id)
     let userLike: 'like' | 'dislike' | null = null
-    if (sessionToken) {
-      const session = verifySession(sessionToken)
-      if (session) userLike = getUserVideoLike(id, session.sessionId)
-    }
+    if (session) userLike = getUserVideoLike(id, sessionId)
     return NextResponse.json({ likes, dislikes, userLike })
   }
 

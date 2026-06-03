@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-const STORAGE_ROOT = path.join(process.cwd(), 'storage')
+const STORAGE_ROOT = '/root/yt-clone/storage'
 
 const MIME_TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
@@ -75,12 +75,15 @@ export async function GET(
 
   // Full file
   const fileBuffer = fs.readFileSync(filePath)
-  return new NextResponse(fileBuffer, {
-    headers: {
-      'Content-Type': mimeType,
-      'Content-Length': String(fileSize),
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=31536000',
-    },
-  })
+  const isDownload = new URL(req.url).searchParams.get('download') === '1'
+  const headers: Record<string, string> = {
+    'Content-Type': mimeType,
+    'Content-Length': String(fileSize),
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=31536000',
+  }
+  if (isDownload) {
+    headers['Content-Disposition'] = `attachment; filename="${encodeURIComponent(path.basename(filePath))}"`
+  }
+  return new NextResponse(fileBuffer, { headers })
 }

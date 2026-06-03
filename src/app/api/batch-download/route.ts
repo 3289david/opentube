@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createBatchDownload, updateBatchDownload, getBatchDownloads, insertVideo, autoDetectFolder } from '@/lib/db'
 import { getVideoMeta } from '@/lib/innertube'
 import { getPlaylistItems, getPlaylist, getChannelVideos, getChannelDetails } from '@/lib/youtube'
+import { verifySession } from '@/lib/session'
 import path from 'path'
 import fs from 'fs'
 import { spawn } from 'child_process'
@@ -54,7 +55,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { type, url, playlistId, channelId, folder = '기타' } = body
+  const { type, url, playlistId, channelId, folder = '기타', sessionToken } = body
+  const sessionPayload = sessionToken ? verifySession(sessionToken) : null
+  const sessionId = sessionPayload?.sessionId ?? ''
 
   if (!type) return NextResponse.json({ error: 'type required' }, { status: 400 })
 
@@ -62,26 +65,26 @@ export async function POST(req: NextRequest) {
 
   if (type === 'playlist' && playlistId) {
     jobId = createBatchDownload('playlist', playlistId, folder)
-    runPlaylistDownload(jobId, playlistId, folder).catch(console.error)
+    runPlaylistDownload(jobId, playlistId, folder, sessionId).catch(console.error)
     return NextResponse.json({ jobId, status: 'started' })
   }
 
   if (type === 'channel' && channelId) {
     jobId = createBatchDownload('channel', channelId, folder)
-    runChannelDownload(jobId, channelId, folder).catch(console.error)
+    runChannelDownload(jobId, channelId, folder, sessionId).catch(console.error)
     return NextResponse.json({ jobId, status: 'started' })
   }
 
   if (type === 'url' && url) {
     jobId = createBatchDownload('url', url, folder)
-    runUrlDownload(jobId, url, folder).catch(console.error)
+    runUrlDownload(jobId, url, folder, sessionId).catch(console.error)
     return NextResponse.json({ jobId, status: 'started' })
   }
 
   return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 }
 
-async function runPlaylistDownload(jobId: number, playlistId: string, folder: string) {
+async function runPlaylistDownload(jobId: number, playlistId: string, folder: string, sessionId = '') {
   if (activeJobs.has(jobId)) return
   activeJobs.add(jobId)
 
@@ -122,7 +125,7 @@ async function runPlaylistDownload(jobId: number, playlistId: string, folder: st
           video_path: videoPath || undefined,
           captions_path: undefined,
           folder: detectedFolder,
-        })
+        }, sessionId)
       } catch (e) {
         console.error(`Playlist video ${videoId} failed:`, e)
       }
@@ -139,7 +142,7 @@ async function runPlaylistDownload(jobId: number, playlistId: string, folder: st
   }
 }
 
-async function runChannelDownload(jobId: number, channelId: string, folder: string) {
+async function runChannelDownload(jobId: number, channelId: string, folder: string, sessionId = '') {
   if (activeJobs.has(jobId)) return
   activeJobs.add(jobId)
 
@@ -179,7 +182,7 @@ async function runChannelDownload(jobId: number, channelId: string, folder: stri
           video_path: videoPath || undefined,
           captions_path: undefined,
           folder: detectedFolder,
-        })
+        }, sessionId)
       } catch (e) {
         console.error(`Channel video ${videoId} failed:`, e)
       }
@@ -196,7 +199,7 @@ async function runChannelDownload(jobId: number, channelId: string, folder: stri
   }
 }
 
-async function runUrlDownload(jobId: number, url: string, folder: string) {
+async function runUrlDownload(jobId: number, url: string, folder: string, sessionId = '') {
   if (activeJobs.has(jobId)) return
   activeJobs.add(jobId)
 

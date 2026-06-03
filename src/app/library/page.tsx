@@ -44,6 +44,14 @@ function LibraryContent() {
   const [selectedVideos, setSelectedVideos] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
   const [activeFolder, setActiveFolder] = useState(folderParam)
+  const [sessionToken, setSessionToken] = useState<string>('')
+
+  useEffect(() => {
+    const stored = localStorage.getItem('ot_session')
+    if (stored) {
+      try { setSessionToken(JSON.parse(stored)?.token || '') } catch { /* */ }
+    }
+  }, [])
 
   useEffect(() => {
     setActiveFolder(folderParam)
@@ -56,7 +64,10 @@ function LibraryContent() {
       const params = new URLSearchParams({ sort: s, stats: '1' })
       if (folder) params.set('folder', folder)
       if (q) params.set('search', q)
-      const res = await fetch(`/yt/api/library?${params}`)
+      const tok = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+      const res = await fetch(`/yt/api/library?${params}`, {
+        headers: tok ? { 'Authorization': `Bearer ${tok}` } : {},
+      })
       const data = await res.json()
       setVideos(data.videos || [])
       if (data.stats) setStats(data.stats)
@@ -86,18 +97,32 @@ function LibraryContent() {
 
   const handleDelete = async (videoId: string) => {
     if (!confirm('이 영상을 삭제하시겠습니까?')) return
-    await fetch(`/yt/api/library?videoId=${videoId}`, { method: 'DELETE' })
+    const tok = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
+    await fetch(`/yt/api/library?videoId=${videoId}`, {
+      method: 'DELETE',
+      headers: tok ? { 'Authorization': `Bearer ${tok}` } : {},
+    })
     setVideos(prev => prev.filter(v => v.id !== videoId))
     setSelectedVideos(prev => { const s = new Set(prev); s.delete(videoId); return s })
   }
 
   const handleMoveFolder = async (videoId: string, folder: string) => {
+    const tok = sessionToken || JSON.parse(localStorage.getItem('ot_session') || '{}')?.token || ''
     await fetch('/yt/api/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'move', videoId, folder }),
+      body: JSON.stringify({ action: 'move', videoId, folder, sessionToken: tok }),
     })
     loadLibrary()
+  }
+
+  const downloadVideoToPC = (v: LibraryVideo) => {
+    if (!v.video_path) return
+    const filename = v.video_path.split('/').pop() || `${v.id}.mp4`
+    const a = document.createElement('a')
+    a.href = `/yt/api/storage/${v.id}/${encodeURIComponent(filename)}?download=1`
+    a.download = `${v.title || v.id}.mp4`
+    a.click()
   }
 
   const toggleSelect = (id: string) => {
@@ -143,7 +168,7 @@ function LibraryContent() {
   const getThumbnailSrc = (v: LibraryVideo): string => {
     if (!v.thumbnail_path) return ''
     const filename = v.thumbnail_path.split('/').pop() || ''
-    return `/api/storage/${v.id}/${encodeURIComponent(filename)}`
+    return `/yt/api/storage/${v.id}/${encodeURIComponent(filename)}`
   }
 
   return (
@@ -289,13 +314,24 @@ function LibraryContent() {
                   </div>
                   {/* Actions on hover */}
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {v.video_path && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); downloadVideoToPC(v) }}
+                        className="bg-black/70 p-1.5 rounded-lg hover:bg-black text-white"
+                        title="MP4 PC 다운로드"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.preventDefault(); exportVideoZip(v.id) }}
                       className="bg-black/70 p-1.5 rounded-lg hover:bg-black text-white"
-                      title="ZIP 내보내기"
+                      title="오프라인 패키지 ZIP"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </button>
                     <button
