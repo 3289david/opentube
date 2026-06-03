@@ -19,6 +19,42 @@ interface Video {
 
 const CATEGORIES = ['전체', '음악', '게임', '뉴스', '스포츠', '코딩', '요리', '여행', '교육', '엔터']
 
+const REGIONS = [
+  { code: 'KR', label: '한국', flag: '🇰🇷' },
+  { code: 'US', label: '미국', flag: '🇺🇸' },
+  { code: 'JP', label: '일본', flag: '🇯🇵' },
+  { code: 'TW', label: '대만', flag: '🇹🇼' },
+  { code: 'GB', label: '영국', flag: '🇬🇧' },
+  { code: 'DE', label: '독일', flag: '🇩🇪' },
+  { code: 'FR', label: '프랑스', flag: '🇫🇷' },
+  { code: 'IN', label: '인도', flag: '🇮🇳' },
+  { code: 'BR', label: '브라질', flag: '🇧🇷' },
+  { code: 'AU', label: '호주', flag: '🇦🇺' },
+  { code: 'CA', label: '캐나다', flag: '🇨🇦' },
+  { code: 'MX', label: '멕시코', flag: '🇲🇽' },
+  { code: 'ID', label: '인도네시아', flag: '🇮🇩' },
+  { code: 'TH', label: '태국', flag: '🇹🇭' },
+  { code: 'VN', label: '베트남', flag: '🇻🇳' },
+  { code: 'PH', label: '필리핀', flag: '🇵🇭' },
+  { code: 'SG', label: '싱가포르', flag: '🇸🇬' },
+  { code: 'RU', label: '러시아', flag: '🇷🇺' },
+  { code: 'IT', label: '이탈리아', flag: '🇮🇹' },
+  { code: 'ES', label: '스페인', flag: '🇪🇸' },
+]
+
+function detectRegion(): string {
+  if (typeof localStorage === 'undefined') return 'KR'
+  const stored = localStorage.getItem('ot_region')
+  if (stored) return stored
+  const lang = typeof navigator !== 'undefined' ? navigator.language : 'ko'
+  const map: Record<string, string> = {
+    ko: 'KR', ja: 'JP', zh: 'TW', en: 'US', de: 'DE', fr: 'FR',
+    pt: 'BR', es: 'ES', it: 'IT', ru: 'RU', hi: 'IN', th: 'TH',
+    vi: 'VN', id: 'ID', tl: 'PH',
+  }
+  return map[lang.split('-')[0]] || 'KR'
+}
+
 function HomeContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -28,6 +64,8 @@ function HomeContent() {
   const [searchQuery, setSearchQuery] = useState(query)
   const [activeCategory, setActiveCategory] = useState('전체')
   const [activeTab, setActiveTab] = useState(tab)
+  const [region, setRegion] = useState('KR')
+  const [regionReady, setRegionReady] = useState(false)
 
   const [videos, setVideos] = useState<Video[]>([])
   const [shorts, setShorts] = useState<Video[]>([])
@@ -35,25 +73,39 @@ function HomeContent() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [nextPageToken, setNextPageToken] = useState<string | undefined>()
+  const [isPersonalized, setIsPersonalized] = useState(false)
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   const loadingMoreRef = useRef(false)
 
-  // ── Initial load ────────────────────────────────────────────────────────────
+  // Init region from localStorage on client
   useEffect(() => {
-    if (query) {
-      setSearchQuery(query)
-      setActiveTab(tab)
-      runSearch(query, undefined, tab)
-    } else {
-      loadHome('전체')
-      loadShorts()
-      loadLocalRecent()
-    }
+    const r = detectRegion()
+    setRegion(r)
+    setRegionReady(true)
+  }, [])
+
+  // Load home when region is ready (and no search query)
+  useEffect(() => {
+    if (!regionReady || query) return
+    setVideos([])
+    setNextPageToken(undefined)
+    loadHome('전체', undefined, region)
+    loadShorts(region)
+    loadLocalRecent()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionReady, region])
+
+  // Load search results when query changes
+  useEffect(() => {
+    if (!query) return
+    setSearchQuery(query)
+    setActiveTab(tab)
+    runSearch(query, undefined, tab)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, tab])
 
-  // ── IntersectionObserver — auto load more ───────────────────────────────────
+  // IntersectionObserver — auto load more
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -61,7 +113,7 @@ function HomeContent() {
           fetchMore()
         }
       },
-      { rootMargin: '400px' }   // trigger 400px before bottom
+      { rootMargin: '400px' }
     )
     if (sentinelRef.current) observer.observe(sentinelRef.current)
     return () => observer.disconnect()
@@ -69,24 +121,33 @@ function HomeContent() {
   }, [nextPageToken])
 
   // ── Data fetchers ────────────────────────────────────────────────────────────
-  const loadHome = async (category: string, pageToken?: string) => {
+  const loadHome = async (category: string, pageToken?: string, reg = region) => {
     if (!pageToken) setLoading(true)
     try {
-      let url: string
       if (category === '전체') {
-        url = '/yt/api/trending'
+        let sessionToken: string | null = null
+        try {
+          const stored = localStorage.getItem('ot_session')
+          if (stored) sessionToken = JSON.parse(stored).token
+        } catch { /* */ }
+        const recUrl = `/yt/api/recommendations?region=${reg}${sessionToken ? `&sessionToken=${encodeURIComponent(sessionToken)}` : ''}${pageToken ? `&pageToken=${pageToken}` : ''}`
+        const res = await fetch(recUrl)
+        const data = await res.json()
+        const items: Video[] = data.items || []
+        if (pageToken) setVideos(prev => [...prev, ...items])
+        else setVideos(items)
+        setNextPageToken(data.nextPageToken)
+        setIsPersonalized(data.isPersonalized ?? false)
       } else {
-        url = `/yt/api/trending?type=category&category=${encodeURIComponent(category)}${pageToken ? `&pageToken=${pageToken}` : ''}`
+        const url = `/yt/api/trending?type=category&category=${encodeURIComponent(category)}&region=${reg}${pageToken ? `&pageToken=${pageToken}` : ''}`
+        const res = await fetch(url)
+        const data = await res.json()
+        const items: Video[] = data.videos || data.items || []
+        if (pageToken) setVideos(prev => [...prev, ...items])
+        else setVideos(items)
+        setNextPageToken(data.nextPageToken)
+        setIsPersonalized(false)
       }
-      const res = await fetch(url)
-      const data = await res.json()
-      const items: Video[] = data.videos || data.items || []
-      if (pageToken) {
-        setVideos(prev => [...prev, ...items])
-      } else {
-        setVideos(items)
-      }
-      setNextPageToken(data.nextPageToken)
     } catch {
       if (!pageToken) setVideos([])
     } finally {
@@ -94,14 +155,12 @@ function HomeContent() {
     }
   }
 
-  const loadShorts = async () => {
+  const loadShorts = async (reg = region) => {
     try {
-      const res = await fetch('/yt/api/trending?type=shorts')
+      const res = await fetch(`/yt/api/trending?type=shorts&region=${reg}`)
       const data = await res.json()
       setShorts((data.items || []).slice(0, 12))
-    } catch {
-      setShorts([])
-    }
+    } catch { setShorts([]) }
   }
 
   const loadLocalRecent = async () => {
@@ -125,7 +184,7 @@ function HomeContent() {
     if (pageToken) setLoadingMore(true)
     else setLoading(true)
     try {
-      const res = await fetch(`/yt/api/search?q=${encodeURIComponent(q)}&type=${type}${pageToken ? `&pageToken=${pageToken}` : ''}`)
+      const res = await fetch(`/yt/api/search?q=${encodeURIComponent(q)}&type=${type}&region=${region}${pageToken ? `&pageToken=${pageToken}` : ''}`)
       const data = await res.json()
       const items: Video[] = data.items || []
       if (pageToken) setVideos(prev => [...prev, ...items])
@@ -144,17 +203,14 @@ function HomeContent() {
     loadingMoreRef.current = true
     setLoadingMore(true)
     try {
-      if (query) {
-        await runSearch(query, nextPageToken, activeTab)
-      } else {
-        await loadHome(activeCategory, nextPageToken)
-      }
+      if (query) await runSearch(query, nextPageToken, activeTab)
+      else await loadHome(activeCategory, nextPageToken)
     } finally {
       loadingMoreRef.current = false
       setLoadingMore(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextPageToken, query, activeCategory, activeTab])
+  }, [nextPageToken, query, activeCategory, activeTab, region])
 
   const switchCategory = (cat: string) => {
     setActiveCategory(cat)
@@ -163,19 +219,30 @@ function HomeContent() {
     loadHome(cat)
   }
 
+  const switchRegion = (r: string) => {
+    if (r === region) return
+    localStorage.setItem('ot_region', r)
+    setRegion(r)
+    setActiveCategory('전체')
+    setVideos([])
+    setNextPageToken(undefined)
+    loadHome('전체', undefined, r)
+    loadShorts(r)
+  }
+
   const switchTab = (t: string) => {
     setActiveTab(t)
     if (query) {
       setVideos([])
       setNextPageToken(undefined)
-      router.push(`/yt?q=${encodeURIComponent(query)}&tab=${t}`)
+      router.push(`/?q=${encodeURIComponent(query)}&tab=${t}`)
     }
   }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchQuery.trim()) {
-      router.push(`/yt?q=${encodeURIComponent(searchQuery.trim())}&tab=${activeTab}`)
+      router.push(`/?q=${encodeURIComponent(searchQuery.trim())}&tab=${activeTab}`)
     }
   }
 
@@ -189,6 +256,7 @@ function HomeContent() {
   }
 
   const isSearchMode = !!query
+  const currentRegion = REGIONS.find(r => r.code === region)
 
   return (
     <div className="flex flex-col min-h-full">
@@ -220,6 +288,26 @@ function HomeContent() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ── Region selector (no query) ─────────────────────────────────── */}
+      {!isSearchMode && (
+        <div className="flex gap-1.5 px-4 pb-2 overflow-x-auto scrollbar-hide flex-shrink-0">
+          {REGIONS.map(r => (
+            <button
+              key={r.code}
+              onClick={() => switchRegion(r.code)}
+              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                region === r.code
+                  ? 'bg-[#ff0000] text-white'
+                  : 'bg-[#1a1a1a] text-gray-400 hover:bg-[#2a2a2a] hover:text-white border border-[#333]'
+              }`}
+            >
+              <span>{r.flag}</span>
+              <span className="hidden sm:inline">{r.label}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -256,7 +344,7 @@ function HomeContent() {
               {t.label}
             </button>
           ))}
-          <button onClick={() => router.push('/yt')} className="ml-auto mb-1 text-xs text-gray-500 hover:text-white flex items-center gap-1 px-2">
+          <button onClick={() => router.push('/')} className="ml-auto mb-1 text-xs text-gray-500 hover:text-white flex items-center gap-1 px-2">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -272,7 +360,7 @@ function HomeContent() {
           <div className="mb-6 mt-2">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-bold text-white">최근 다운로드</h2>
-              <Link href="/yt/library" className="text-xs text-[#ff0000] hover:underline">모두 보기</Link>
+              <Link href="/library" className="text-xs text-[#ff0000] hover:underline">모두 보기</Link>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
               {localVideos.map(v => <VideoCard key={v.id} {...v} isDownloaded />)}
@@ -292,7 +380,7 @@ function HomeContent() {
                 </div>
                 <h2 className="text-base font-bold text-white">Shorts</h2>
               </div>
-              <Link href="/yt/shorts" className="text-xs text-[#ff0000] hover:underline">모두 보기</Link>
+              <Link href="/shorts" className="text-xs text-[#ff0000] hover:underline">모두 보기</Link>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {shorts.map(s => (
@@ -312,14 +400,20 @@ function HomeContent() {
         {/* ── Section title ─────────────────────────────────────────────── */}
         {!loading && (
           <h2 className="text-base font-bold text-white mb-4">
-            {isSearchMode ? `"${query}" 검색 결과` : activeCategory === '전체' ? '인기 동영상' : activeCategory}
+            {isSearchMode
+              ? `"${query}" 검색 결과`
+              : activeCategory === '전체'
+                ? isPersonalized
+                  ? '✨ 추천 영상'
+                  : `🔥 인기 동영상 ${currentRegion ? `· ${currentRegion.flag} ${currentRegion.label}` : ''}`
+                : activeCategory}
           </h2>
         )}
 
         {/* ── Video grid ────────────────────────────────────────────────── */}
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 20 }).map((_, i) => (
+            {Array.from({ length: 16 }).map((_, i) => (
               <div key={i} className="animate-pulse">
                 <div className="aspect-video bg-[#272727] rounded-xl mb-3" />
                 <div className="flex gap-3">
@@ -337,7 +431,7 @@ function HomeContent() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {videos.map(v => <VideoCard key={v.id} {...v} />)}
           </div>
-        ) : !loading && (
+        ) : (
           <div className="flex flex-col items-center justify-center py-20 text-gray-500">
             <svg className="w-16 h-16 mb-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -350,7 +444,6 @@ function HomeContent() {
         {/* ── Infinite scroll sentinel ───────────────────────────────────── */}
         <div ref={sentinelRef} className="h-1 mt-4" />
 
-        {/* ── Loading more indicator ─────────────────────────────────────── */}
         {loadingMore && (
           <div className="flex justify-center py-8">
             <div className="flex gap-2 items-center text-gray-400">
@@ -360,7 +453,6 @@ function HomeContent() {
           </div>
         )}
 
-        {/* ── End of results ─────────────────────────────────────────────── */}
         {!nextPageToken && videos.length > 0 && !loadingMore && (
           <p className="text-center text-gray-600 text-xs py-6">모든 영상을 불러왔습니다</p>
         )}

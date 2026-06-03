@@ -6,17 +6,18 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') || 'trending'
   const category = searchParams.get('category') || ''
   const pageToken = searchParams.get('pageToken') || undefined
+  const region = (searchParams.get('region') || 'KR').toUpperCase()
 
   try {
     if (type === 'shorts') {
-      const result = await getShorts(pageToken)
+      const result = await getShorts(pageToken, region)
       return NextResponse.json(result)
     }
     if (type === 'category' && category) {
-      const result = await getVideosByCategory(category, pageToken)
+      const result = await getVideosByCategory(category, pageToken, region)
       return NextResponse.json({ videos: result.items, nextPageToken: result.nextPageToken })
     }
-    const videos = await getTrendingVideos()
+    const videos = await getTrendingVideos(region)
     return NextResponse.json({ videos })
   } catch (error) {
     console.error('Trending error:', error)

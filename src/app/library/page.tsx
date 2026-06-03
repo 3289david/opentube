@@ -56,7 +56,7 @@ function LibraryContent() {
       const params = new URLSearchParams({ sort: s, stats: '1' })
       if (folder) params.set('folder', folder)
       if (q) params.set('search', q)
-      const res = await fetch(`/api/library?${params}`)
+      const res = await fetch(`/yt/api/library?${params}`)
       const data = await res.json()
       setVideos(data.videos || [])
       if (data.stats) setStats(data.stats)
@@ -86,13 +86,13 @@ function LibraryContent() {
 
   const handleDelete = async (videoId: string) => {
     if (!confirm('이 영상을 삭제하시겠습니까?')) return
-    await fetch(`/api/library?videoId=${videoId}`, { method: 'DELETE' })
+    await fetch(`/yt/api/library?videoId=${videoId}`, { method: 'DELETE' })
     setVideos(prev => prev.filter(v => v.id !== videoId))
     setSelectedVideos(prev => { const s = new Set(prev); s.delete(videoId); return s })
   }
 
   const handleMoveFolder = async (videoId: string, folder: string) => {
-    await fetch('/api/library', {
+    await fetch('/yt/api/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'move', videoId, folder }),
@@ -112,7 +112,7 @@ function LibraryContent() {
   const exportLibraryHtml = async () => {
     setExporting(true)
     try {
-      const res = await fetch('/api/library/export?type=html')
+      const res = await fetch('/yt/api/library/export?type=html')
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -128,7 +128,7 @@ function LibraryContent() {
   }
 
   const exportVideoZip = async (videoId: string) => {
-    const res = await fetch(`/api/library/export?type=zip&videoId=${videoId}`)
+    const res = await fetch(`/yt/api/library/export?type=zip&videoId=${videoId}`)
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

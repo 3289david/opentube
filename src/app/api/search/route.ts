@@ -7,6 +7,7 @@ export async function GET(req: NextRequest) {
   const type = searchParams.get('type') || 'video'
   const pageToken = searchParams.get('pageToken') || undefined
   const playlistId = searchParams.get('playlistId')
+  const region = (searchParams.get('region') || 'KR').toUpperCase()
 
   try {
     if (playlistId) {
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ items: channels })
     }
 
-    const result = await searchVideos(q, pageToken)
+    const result = await searchVideos(q, pageToken, region)
     return NextResponse.json(result)
   } catch (error) {
     console.error('Search error:', error)

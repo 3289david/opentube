@@ -52,7 +52,7 @@ export default function PlaylistPage() {
   const downloadAll = async () => {
     setDownloading(true)
     try {
-      await fetch('/api/download', {
+      await fetch('/yt/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

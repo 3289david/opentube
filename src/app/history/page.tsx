@@ -91,7 +91,7 @@ export default function HistoryPage() {
           </svg>
           <p className="text-xl text-gray-400 mb-2">시청 기록이 없습니다</p>
           <p className="text-gray-600 text-sm mb-4">영상을 시청하면 여기에 기록됩니다</p>
-          <Link href="/yt" className="bg-[#ff0000] text-white px-6 py-2 rounded-full hover:bg-red-700 transition-colors">
+          <Link href="/" className="bg-[#ff0000] text-white px-6 py-2 rounded-full hover:bg-red-700 transition-colors">
             홈으로
           </Link>
         </div>

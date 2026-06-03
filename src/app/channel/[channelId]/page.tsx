@@ -43,7 +43,7 @@ export default function ChannelPage() {
   const loadChannel = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/channel/${channelId}`)
+      const res = await fetch(`/yt/api/channel/${channelId}`)
       const data = await res.json()
       setChannel(data.channel)
       setVideos(data.videos || [])
@@ -57,7 +57,7 @@ export default function ChannelPage() {
 
   const checkSubscription = async () => {
     try {
-      const res = await fetch('/api/subscriptions')
+      const res = await fetch('/yt/api/subscriptions')
       const data = await res.json()
       setIsSubscribed((data.subscriptions || []).some((s: { channel_id: string }) => s.channel_id === channelId))
     } catch { }
@@ -68,7 +68,7 @@ export default function ChannelPage() {
       await fetch(`/api/subscriptions?channelId=${channelId}`, { method: 'DELETE' })
       setIsSubscribed(false)
     } else {
-      await fetch('/api/subscriptions', {
+      await fetch('/yt/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +85,7 @@ export default function ChannelPage() {
     if (!nextPageToken) return
     setLoadingMore(true)
     try {
-      const res = await fetch(`/api/channel/${channelId}?pageToken=${nextPageToken}`)
+      const res = await fetch(`/yt/api/channel/${channelId}?pageToken=${nextPageToken}`)
       const data = await res.json()
       setVideos(prev => [...prev, ...(data.videos || [])])
       setNextPageToken(data.nextPageToken)

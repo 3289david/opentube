@@ -98,7 +98,7 @@ export default function SubscriptionsPage() {
         </svg>
         <p className="text-xl text-gray-400 mb-2">구독한 채널이 없습니다</p>
         <p className="text-gray-600 text-sm mb-4">채널 페이지에서 구독 버튼을 눌러보세요</p>
-        <Link href="/yt" className="bg-[#ff0000] text-white px-6 py-2 rounded-full hover:bg-red-700 transition-colors">
+        <Link href="/" className="bg-[#ff0000] text-white px-6 py-2 rounded-full hover:bg-red-700 transition-colors">
           홈으로
         </Link>
       </div>
@@ -149,7 +149,7 @@ export default function SubscriptionsPage() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <Link href={`/yt/channel/${sub.channel_id}`} className="text-white text-sm font-medium hover:text-gray-200 block truncate">
+              <Link href={`/channel/${sub.channel_id}`} className="text-white text-sm font-medium hover:text-gray-200 block truncate">
                 {sub.channel_name}
               </Link>
               <p className="text-gray-500 text-xs">{sub.subscribed_at.split('T')[0]} 구독</p>

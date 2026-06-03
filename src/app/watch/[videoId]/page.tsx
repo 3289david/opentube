@@ -209,7 +209,13 @@ export default function WatchPage() {
         await fetch('/yt/api/watch-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId, watchTime: time }),
+          body: JSON.stringify({
+            videoId,
+            watchTime: time,
+            title: video?.title,
+            channel: video?.channel,
+            thumbnail: video?.thumbnail,
+          }),
         })
       } catch { /* */ }
     }

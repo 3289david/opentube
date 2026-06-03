@@ -54,9 +54,8 @@ function formatViewCount(count: string): string {
   return String(n)
 }
 
-export async function searchVideos(query: string, pageToken?: string): Promise<YouTubeSearchResult> {
+export async function searchVideos(query: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
-  // API key is hardcoded
 
   try {
     const searchRes = await youtube.search.list({
@@ -66,7 +65,7 @@ export async function searchVideos(query: string, pageToken?: string): Promise<Y
       type: ['video'],
       maxResults: 20,
       pageToken: pageToken,
-      regionCode: 'KR',
+      regionCode,
     })
 
     const videoIds = searchRes.data.items?.map(i => i.id?.videoId).filter(Boolean) as string[]
@@ -358,7 +357,7 @@ export async function getVideoComments(videoId: string): Promise<YouTubeComment[
   }
 }
 
-export async function getTrendingVideos(): Promise<YouTubeVideo[]> {
+export async function getTrendingVideos(regionCode = 'KR'): Promise<YouTubeVideo[]> {
   const apiKey = getApiKey()
   if (!apiKey) return []
 
@@ -366,7 +365,7 @@ export async function getTrendingVideos(): Promise<YouTubeVideo[]> {
     const res = await youtube.videos.list({
       key: apiKey,
       chart: 'mostPopular',
-      regionCode: 'KR',
+      regionCode,
       part: ['snippet', 'contentDetails', 'statistics'],
       maxResults: 24,
     })
@@ -388,7 +387,7 @@ export async function getTrendingVideos(): Promise<YouTubeVideo[]> {
   }
 }
 
-export async function getShorts(pageToken?: string): Promise<YouTubeSearchResult> {
+export async function getShorts(pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
   try {
     const searchRes = await youtube.search.list({
@@ -398,7 +397,7 @@ export async function getShorts(pageToken?: string): Promise<YouTubeSearchResult
       type: ['video'],
       videoDuration: 'short',
       order: 'viewCount',
-      regionCode: 'KR',
+      regionCode,
       maxResults: 20,
       pageToken,
     })
@@ -435,7 +434,7 @@ export async function getShorts(pageToken?: string): Promise<YouTubeSearchResult
   }
 }
 
-export async function getVideosByCategory(category: string, pageToken?: string): Promise<YouTubeSearchResult> {
+export async function getVideosByCategory(category: string, pageToken?: string, regionCode = 'KR'): Promise<YouTubeSearchResult> {
   const apiKey = getApiKey()
   const categoryQueries: Record<string, string> = {
     '음악': 'music 음악 노래',
@@ -457,7 +456,7 @@ export async function getVideosByCategory(category: string, pageToken?: string):
       part: ['snippet'],
       type: ['video'],
       order: 'viewCount',
-      regionCode: 'KR',
+      regionCode,
       maxResults: 20,
       pageToken,
       videoDuration: 'medium',
@@ -491,6 +490,99 @@ export async function getVideosByCategory(category: string, pageToken?: string):
     }
   } catch (e) {
     console.error('YouTube getVideosByCategory error:', e)
+    return { items: [], totalResults: 0 }
+  }
+}
+
+// Build a personalized feed from topics + channel IDs + trending
+export async function getRecommendedFeed(
+  topics: string[],          // keywords extracted from watch history / likes
+  channelIds: string[],      // subscribed channel IDs
+  regionCode = 'KR',
+  pageToken?: string
+): Promise<YouTubeSearchResult> {
+  const apiKey = getApiKey()
+
+  try {
+    const seen = new Set<string>()
+    const allItems: YouTubeVideo[] = []
+
+    // Fetch topic-based search results (up to 3 queries, 8 results each)
+    const querySlice = topics.slice(0, 3)
+    const topicPromises = querySlice.map(q =>
+      youtube.search.list({
+        key: apiKey,
+        q,
+        part: ['snippet'],
+        type: ['video'],
+        maxResults: 8,
+        regionCode,
+        pageToken,
+        order: 'relevance',
+      }).catch(() => null)
+    )
+
+    // Fetch recent videos from subscribed channels (up to 2 channels)
+    const chanSlice = channelIds.slice(0, 2)
+    const chanPromises = chanSlice.map(channelId =>
+      youtube.search.list({
+        key: apiKey,
+        channelId,
+        part: ['snippet'],
+        type: ['video'],
+        maxResults: 4,
+        order: 'date',
+      }).catch(() => null)
+    )
+
+    const results = await Promise.all([...topicPromises, ...chanPromises])
+    const videoIds: string[] = []
+    let nextToken: string | undefined
+
+    for (const res of results) {
+      if (!res) continue
+      if (!nextToken && res.data.nextPageToken) nextToken = res.data.nextPageToken
+      for (const item of res.data.items || []) {
+        const id = item.id?.videoId
+        if (id && !seen.has(id)) { seen.add(id); videoIds.push(id) }
+      }
+    }
+
+    if (!videoIds.length) {
+      return getTrendingVideos(regionCode).then(videos => ({
+        items: videos,
+        nextPageToken: undefined,
+        totalResults: videos.length,
+      }))
+    }
+
+    const detailsRes = await youtube.videos.list({
+      key: apiKey,
+      id: videoIds,
+      part: ['snippet', 'contentDetails', 'statistics'],
+    })
+
+    const items: YouTubeVideo[] = (detailsRes.data.items || []).map(v => ({
+      id: v.id!,
+      title: v.snippet?.title || '',
+      description: v.snippet?.description || '',
+      channelId: v.snippet?.channelId || '',
+      channelTitle: v.snippet?.channelTitle || '',
+      thumbnail: v.snippet?.thumbnails?.medium?.url || '',
+      duration: parseDuration(v.contentDetails?.duration || ''),
+      viewCount: formatViewCount(v.statistics?.viewCount || '0'),
+      publishedAt: v.snippet?.publishedAt || '',
+    }))
+
+    // Shuffle for variety
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]]
+    }
+
+    return { items, nextPageToken: nextToken, totalResults: allItems.length }
+  } catch (e) {
+    console.error('getRecommendedFeed error:', e)
     return { items: [], totalResults: 0 }
   }
 }
