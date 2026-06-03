@@ -49,13 +49,28 @@ export default function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId: id }),
       })
-      if (res.ok) {
-        setDownloaded(true)
-        onDownload?.(id)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
+      if (!res.ok) { setDownloading(false); return }
+
+      // Poll until done or error
+      const poll = setInterval(async () => {
+        try {
+          const p = await fetch(`/yt/api/download?videoId=${id}`)
+          const data = await p.json()
+          if (data.status === 'done') {
+            clearInterval(poll)
+            setDownloaded(true)
+            setDownloading(false)
+            onDownload?.(id)
+          } else if (data.status === 'error') {
+            clearInterval(poll)
+            setDownloading(false)
+          }
+        } catch { /* keep polling */ }
+      }, 3000)
+
+      // Safety timeout: stop polling after 10 minutes
+      setTimeout(() => { clearInterval(poll); setDownloading(false) }, 600000)
+    } catch {
       setDownloading(false)
     }
   }

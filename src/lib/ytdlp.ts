@@ -53,6 +53,8 @@ export async function downloadVideo(videoId: string, outputDir?: string): Promis
   return new Promise((resolve, reject) => {
     const args = [
       '--ffmpeg-location', FFMPEG,
+      '--js-runtimes', 'node:/usr/bin/node',
+      '--extractor-args', 'youtube:player_client=android,web',
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -130,7 +132,11 @@ export interface VideoInfo {
 export async function getVideoInfo(videoId: string): Promise<VideoInfo | null> {
   return new Promise((resolve) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`
-    const proc = spawn(YT_DLP, ['--dump-json', '--no-playlist', url])
+    const proc = spawn(YT_DLP, [
+      '--js-runtimes', 'node:/usr/bin/node',
+      '--extractor-args', 'youtube:player_client=android,web',
+      '--dump-json', '--no-playlist', url,
+    ])
 
     let output = ''
     proc.stdout.on('data', (data: Buffer) => { output += data.toString() })
@@ -164,6 +170,8 @@ export async function downloadPlaylist(playlistUrl: string, outputDir: string): 
   return new Promise((resolve, reject) => {
     const args = [
       '--ffmpeg-location', FFMPEG,
+      '--js-runtimes', 'node:/usr/bin/node',
+      '--extractor-args', 'youtube:player_client=android,web',
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
@@ -195,6 +203,8 @@ export async function downloadChannel(channelUrl: string, outputDir: string): Pr
   return new Promise((resolve, reject) => {
     const args = [
       '--ffmpeg-location', FFMPEG,
+      '--js-runtimes', 'node:/usr/bin/node',
+      '--extractor-args', 'youtube:player_client=android,web',
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--write-thumbnail',
