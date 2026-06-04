@@ -234,6 +234,28 @@ function initializeSchema(db: Database.Database): void {
     }
   } catch (e) { console.error('videos session migration failed:', e) }
 
+  // Migrate playlist_videos: remove FK on video_id (videos now has composite PK → mismatch)
+  try {
+    const fks = db.prepare('PRAGMA foreign_key_list(playlist_videos)').all() as { table: string }[]
+    const hasVideosFk = fks.some(fk => fk.table === 'videos')
+    if (hasVideosFk) {
+      db.pragma('foreign_keys = OFF')
+      db.exec(`
+        CREATE TABLE playlist_videos_new (
+          playlist_id INTEGER NOT NULL,
+          video_id TEXT NOT NULL,
+          position INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (playlist_id, video_id),
+          FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO playlist_videos_new SELECT * FROM playlist_videos;
+        DROP TABLE playlist_videos;
+        ALTER TABLE playlist_videos_new RENAME TO playlist_videos;
+      `)
+      db.pragma('foreign_keys = ON')
+    }
+  } catch { /* already migrated */ }
+
   // Migrate subscriptions to per-session (old table had UNIQUE on channel_id only)
   try {
     const cols = (db.prepare(`PRAGMA table_info(subscriptions)`).all() as {name: string}[]).map(c => c.name)
