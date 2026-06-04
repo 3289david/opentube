@@ -19,9 +19,10 @@ export async function GET(req: NextRequest) {
     }
 
     if (type === 'html' && videoId) {
-      // Pass storage base URL so the HTML can reference the video via server (avoids huge base64)
-      const origin = new URL(req.url).origin
-      const html = exportVideoAsHtml(videoId, `${origin}/yt/api/storage`)
+      // Build public origin from forwarded headers (nginx sets Host)
+      const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '127.0.0.1:3002'
+      const proto = req.headers.get('x-forwarded-proto') || 'https'
+      const html = exportVideoAsHtml(videoId, `${proto}://${host}/yt/api/storage`)
       return new NextResponse(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
