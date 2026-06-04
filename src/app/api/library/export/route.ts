@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
     }
 
     if (type === 'html' && videoId) {
-      const html = exportVideoAsHtml(videoId)
+      // Pass storage base URL so the HTML can reference the video via server (avoids huge base64)
+      const origin = new URL(req.url).origin
+      const html = exportVideoAsHtml(videoId, `${origin}/yt/api/storage`)
       return new NextResponse(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',

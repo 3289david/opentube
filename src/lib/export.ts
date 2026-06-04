@@ -75,19 +75,18 @@ export function exportVideoAsZip(videoId: string): import('archiver').Archiver {
   return archive
 }
 
-export function exportVideoAsHtml(videoId: string): string {
+// storageBaseUrl: e.g. "https://krl.kr/yt/api/storage" — video served via server URL
+export function exportVideoAsHtml(videoId: string, storageBaseUrl: string): string {
   const video = getVideo(videoId)
   if (!video) throw new Error('Video not found')
 
-  // Embed video as base64 for a truly self-contained offline HTML
-  let videoSrc = ''
-  if (video.video_path && fs.existsSync(video.video_path)) {
-    const base64 = readFileAsBase64(video.video_path)
-    const mime = getMimeType(video.video_path)
-    videoSrc = `data:${mime};base64,${base64}`
-  }
+  const videoFilename = video.video_path ? path.basename(video.video_path) : ''
+  const captionsFilename = video.captions_path ? path.basename(video.captions_path) : ''
 
-  return generateSingleVideoHtml(video, { videoSrc, captionsSrc: '' })
+  const videoSrc = videoFilename ? `${storageBaseUrl}/${videoId}/${encodeURIComponent(videoFilename)}` : ''
+  const captionsSrc = captionsFilename ? `${storageBaseUrl}/${videoId}/${encodeURIComponent(captionsFilename)}` : ''
+
+  return generateSingleVideoHtml(video, { videoSrc, captionsSrc })
 }
 
 interface VideoSrcs {

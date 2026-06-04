@@ -16,8 +16,11 @@ export async function GET(
   const session = sessionToken ? verifySession(sessionToken) : null
   const sessionId = session?.sessionId ?? ''
 
-  // Check local DB for this session's download
-  const localVideo = getVideo(id, sessionId)
+  // Check local DB — try session-specific first, then legacy (session_id='') for backward compat
+  let localVideo = getVideo(id, sessionId)
+  if (!localVideo && sessionId !== '') {
+    localVideo = getVideo(id, '')
+  }
 
   if (wantsComments) {
     const comments = await getVideoComments(id).catch(() => [])
