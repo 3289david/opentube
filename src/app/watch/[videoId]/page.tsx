@@ -137,7 +137,10 @@ export default function WatchPage() {
   const loadVideo = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/yt/api/video/${videoId}`)
+      const stored = localStorage.getItem('ot_session')
+      const token = stored ? (JSON.parse(stored)?.token || '') : ''
+      const tokenParam = token ? `?sessionToken=${encodeURIComponent(token)}` : ''
+      const res = await fetch(`/yt/api/video/${videoId}${tokenParam}`)
       const data = await res.json()
       setVideo(data)
       // Load related videos using actual title for better results

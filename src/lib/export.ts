@@ -37,22 +37,24 @@ export function exportVideoAsZip(videoId: string): import('archiver').Archiver {
 
   const archive = new ZipArchive({ zlib: { level: 6 } })
 
-  const dir = getVideoStorageDir(videoId)
+  // Determine filenames used inside ZIP (must match HTML references)
+  const videoExt = video.video_path ? path.extname(video.video_path) : '.mp4'
+  const captionsExt = video.captions_path ? path.extname(video.captions_path) : '.vtt'
+  const thumbExt = video.thumbnail_path ? path.extname(video.thumbnail_path) : '.jpg'
+  const zipVideoName = 'video' + videoExt
+  const zipCaptionsName = video.captions_path ? 'captions' + captionsExt : ''
+  const zipThumbName = 'thumbnail' + thumbExt
 
-  // Add video file
   if (video.video_path && fs.existsSync(video.video_path)) {
-    archive.file(video.video_path, { name: 'video' + path.extname(video.video_path) })
+    archive.file(video.video_path, { name: zipVideoName })
   }
-  // Add thumbnail
   if (video.thumbnail_path && fs.existsSync(video.thumbnail_path)) {
-    archive.file(video.thumbnail_path, { name: 'thumbnail' + path.extname(video.thumbnail_path) })
+    archive.file(video.thumbnail_path, { name: zipThumbName })
   }
-  // Add captions
   if (video.captions_path && fs.existsSync(video.captions_path)) {
-    archive.file(video.captions_path, { name: 'captions' + path.extname(video.captions_path) })
+    archive.file(video.captions_path, { name: zipCaptionsName })
   }
 
-  // Add metadata JSON
   const metadata = {
     id: video.id,
     title: video.title,
@@ -66,8 +68,8 @@ export function exportVideoAsZip(videoId: string): import('archiver').Archiver {
   }
   archive.append(JSON.stringify(metadata, null, 2), { name: 'metadata.json' })
 
-  // Add offline HTML player
-  archive.append(generateSingleVideoHtml(video), { name: 'index.html' })
+  // HTML references the ZIP filenames (relative paths)
+  archive.append(generateSingleVideoHtml(video, { videoSrc: zipVideoName, captionsSrc: zipCaptionsName }), { name: 'index.html' })
 
   archive.finalize()
   return archive
@@ -76,16 +78,31 @@ export function exportVideoAsZip(videoId: string): import('archiver').Archiver {
 export function exportVideoAsHtml(videoId: string): string {
   const video = getVideo(videoId)
   if (!video) throw new Error('Video not found')
-  return generateSingleVideoHtml(video)
+
+  // Embed video as base64 for a truly self-contained offline HTML
+  let videoSrc = ''
+  if (video.video_path && fs.existsSync(video.video_path)) {
+    const base64 = readFileAsBase64(video.video_path)
+    const mime = getMimeType(video.video_path)
+    videoSrc = `data:${mime};base64,${base64}`
+  }
+
+  return generateSingleVideoHtml(video, { videoSrc, captionsSrc: '' })
 }
 
-function generateSingleVideoHtml(video: VideoRecord): string {
+interface VideoSrcs {
+  videoSrc: string     // relative filename (ZIP) or data URI (standalone)
+  captionsSrc: string  // relative filename (ZIP) or '' (standalone)
+}
+
+function generateSingleVideoHtml(video: VideoRecord, srcs: VideoSrcs): string {
+  const { videoSrc, captionsSrc } = srcs
+
   const thumbnailBase64 = readFileAsBase64(video.thumbnail_path)
   const thumbnailSrc = thumbnailBase64
     ? `data:image/jpeg;base64,${thumbnailBase64}`
     : ''
 
-  const metadataJson = video.metadata_json ? JSON.parse(video.metadata_json) : {}
   const durationStr = video.duration ? formatDuration(video.duration) : ''
 
   return `<!DOCTYPE html>
@@ -121,9 +138,8 @@ function generateSingleVideoHtml(video: VideoRecord): string {
 </div>
 <div class="container">
   <div class="player-wrap">
-    <video id="player" controls preload="metadata"
-      ${video.video_path ? `src="${path.basename(video.video_path)}"` : ''}>
-      ${video.captions_path ? `<track kind="subtitles" src="${path.basename(video.captions_path)}" label="자막">` : ''}
+    <video id="player" controls preload="metadata"${videoSrc ? ` src="${videoSrc}"` : ''}>
+      ${captionsSrc ? `<track kind="subtitles" src="${captionsSrc}" label="자막">` : ''}
       브라우저가 비디오를 지원하지 않습니다.
     </video>
   </div>
